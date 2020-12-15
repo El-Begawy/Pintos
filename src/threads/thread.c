@@ -582,14 +582,6 @@ thread_schedule_tail (struct thread *prev)
 static void
 schedule (void)
 {
-  struct thread *cur = running_thread ();
-  struct thread *next = next_thread_to_run ();
-  struct thread *prev = NULL;
-
-  ASSERT (intr_get_level () == INTR_OFF);
-  ASSERT (cur->status != THREAD_RUNNING);
-  ASSERT (is_thread (next));
-
   struct list_elem *e;
   int64_t time_now = timer_ticks ();
   for (e = list_begin (&sleeping_list); e != list_end (&sleeping_list);)
@@ -602,6 +594,15 @@ schedule (void)
         }
       else e = list_next (e);
     }
+
+  struct thread *cur = running_thread ();
+  struct thread *next = next_thread_to_run ();
+  struct thread *prev = NULL;
+
+  ASSERT (intr_get_level () == INTR_OFF);
+  ASSERT (cur->status != THREAD_RUNNING);
+  ASSERT (is_thread (next));
+
   if (cur != next)
     prev = switch_threads (cur, next);
   thread_schedule_tail (prev);
