@@ -206,7 +206,7 @@ thread_create (const char *name, int priority,
 
   /* Add to run queue. */
   thread_unblock (t);
-
+  thread_yield();
   return tid;
 }
 
@@ -375,6 +375,7 @@ void
 thread_set_priority (int new_priority)
 {
   thread_current ()->priority = new_priority;
+  thread_yield();
 }
 
 /* Returns the current thread's priority. */
@@ -541,7 +542,6 @@ next_thread_to_run (void)
     {
       struct list_elem *next_thread = list_max (&ready_list, &priority_comp, NULL);
       list_remove (next_thread);
-      printf("Here is the priority: %d\n", list_entry(next_thread, struct thread, elem)->priority);
       return list_entry(next_thread, struct thread, elem);
     }
 }
