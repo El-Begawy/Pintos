@@ -247,6 +247,15 @@ thread_unblock (struct thread *t)
   t->status = THREAD_READY;
   intr_set_level (old_level);
 }
+
+/* Comparator used to sort threads according to increasing time */
+bool thread_time_comparator (const struct list_elem *a, const struct list_elem *b, void *aux UNUSED)
+{
+  const struct thread *ta = (list_entry(a, struct thread, sleepelem));
+  const struct thread *tb = (list_entry(b, struct thread, sleepelem));
+  return ta->time_to_wake < tb->time_to_wake;
+}
+
 /* Makes the thread sleep until ticks */
 void
 thread_sleep (int64_t ticks)
@@ -257,7 +266,7 @@ thread_sleep (int64_t ticks)
   enum intr_level old_level = intr_disable ();
   t->status = THREAD_SLEEP;
   t->time_to_wake = ticks;
-  list_push_back (&sleeping_list, &t->sleepelem);
+  list_insert_ordered (&sleeping_list, &t->sleepelem, &thread_time_comparator, NULL);
   schedule ();
   intr_set_level (old_level);
 }
@@ -582,17 +591,17 @@ thread_schedule_tail (struct thread *prev)
 static void
 schedule (void)
 {
-  struct list_elem *e;
+
   int64_t time_now = timer_ticks ();
-  for (e = list_begin (&sleeping_list); e != list_end (&sleeping_list);)
+  while (!list_empty (&sleeping_list))
     {
-      struct thread *t = list_entry (e, struct thread, sleepelem);
+      struct thread *t = list_entry(list_front (&sleeping_list), struct thread, sleepelem);
       if (time_now >= t->time_to_wake)
         {
           thread_unsleep (t);
-          e = list_remove (&t->sleepelem);
+          list_pop_front (&sleeping_list);
         }
-      else e = list_next (e);
+      else break;
     }
 
   struct thread *cur = running_thread ();
