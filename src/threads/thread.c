@@ -535,11 +535,17 @@ static bool priority_comp (const struct list_elem *a, const struct list_elem *b,
 /* Returns the highest ready priority thread */
 static struct thread *get_highest_priority (void)
 {
+  enum intr_level old_level = intr_disable ();
   if (list_empty (&ready_list))
-    return idle_thread;
+    {
+      intr_set_level (old_level);
+      return idle_thread;
+    }
+
   else
     {
       struct list_elem *next_thread = list_max (&ready_list, &priority_comp, NULL);
+      intr_set_level (old_level);
       return list_entry(next_thread, struct thread, elem);
     }
 }
