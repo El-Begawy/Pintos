@@ -151,14 +151,15 @@ sema_up (struct semaphore *sema)
 
     old_level = intr_disable ();
     //update donations
-    list_remove(sema->elem);
+    struct thread *curr = thread_current ();
+    list_remove(&sema->sema_elem);
     struct list_elem *e;
     struct list_elem *j;
     int new_priority = thread_current()->base_priority;
     for (e = list_begin (&thread_current()->locks_held); e != list_end (&thread_current()->locks_held);
          e = list_next (e))
     {
-        struct semaphore *s = list_entry (e, struct semaphore, elem);
+        struct semaphore *s = list_entry (e, struct semaphore, sema_elem);
         for (j = list_begin (&s->waiters); j != list_end (&s->waiters); j = list_next (j)){
             int waiter_priority = list_entry(j,struct thread,elem)->priority;
             if(waiter_priority > new_priority)
