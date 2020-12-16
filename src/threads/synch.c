@@ -356,7 +356,6 @@ bool cond_priority_comp(const struct list_elem *a, const struct list_elem *b, vo
     struct semaphore_elem *waitera = list_entry(a, struct semaphore_elem, elem);
     struct semaphore_elem *waiterb = list_entry(b, struct semaphore_elem, elem);
     //exactly one waiter on each semaphore
-    struct thread *ta =list_entry(list_front(&waitera->semaphore.waiters), struct thread, elem);
-    struct thread *tb =list_entry(list_front(&waiterb->semaphore.waiters), struct thread, elem);
-    return ta->priority < tb->priority;
+    return priority_comp(list_front(&waitera->semaphore.waiters),list_front(&waiterb->semaphore.waiters),NULL);
+
 }
