@@ -11,6 +11,7 @@ struct semaphore
     unsigned value;             /* Current value. */
     struct list waiters;        /* List of waiting threads. */
     struct list holders;
+    struct list_elem sema_elem;
   };
 
 void sema_init (struct semaphore *, unsigned value);
