@@ -112,7 +112,25 @@ sema_up (struct semaphore *sema)
 
   ASSERT (sema != NULL);
 
-  old_level = intr_disable ();
+    old_level = intr_disable ();
+    //update donations
+    list_remove(sema->elem);
+    struct list_elem *e;
+    struct list_elem *j;
+    int new_priority = thread_current()->base_priority;
+    for (e = list_begin (&thread_current()->locks_held); e != list_end (&thread_current()->locks_held);
+         e = list_next (e))
+    {
+        struct semaphore *s = list_entry (e, struct semaphore, elem);
+        for (j = list_begin (&s->waiters); j != list_end (&s->waiters); j = list_next (j)){
+            int waiter_priority = list_entry(j,struct thread,elem)->priority;
+            if(waiter_priority > new_priority)
+                new_priority = waiter_priority;
+        }
+
+    }
+    thread_current()->priority = new_priority;
+
   struct thread *t = NULL;
   if (!list_empty (&sema->waiters)) {
       //choose highest priority thread waiting to schedule
