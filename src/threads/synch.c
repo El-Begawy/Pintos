@@ -115,7 +115,9 @@ sema_up (struct semaphore *sema)
   old_level = intr_disable ();
   struct thread *t = NULL;
   if (!list_empty (&sema->waiters)) {
-      t = list_entry (list_pop_front (&sema->waiters),
+      //choose highest priority thread waiting to schedule
+      struct list_elem *next_thread = list_max (&sema->waiters, &priority_comp, NULL);
+      t = list_entry (next_thread,
                       struct thread, elem);
       thread_unblock (t);
   }

@@ -525,7 +525,7 @@ alloc_frame (struct thread *t, size_t size)
   return t->stack;
 }
 
-static bool priority_comp (const struct list_elem *a, const struct list_elem *b, void *AUX UNUSED)
+bool priority_comp (const struct list_elem *a, const struct list_elem *b, void *AUX UNUSED)
 {
   int a_priority = (list_entry(a, struct thread, elem))->priority;
   int b_priority = (list_entry(b, struct thread, elem))->priority;
