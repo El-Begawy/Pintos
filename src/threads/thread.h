@@ -91,7 +91,7 @@ struct thread {
     int64_t time_to_wake;
     struct list_elem allelem;           /* List element for all threads list. */
     struct list locks_held;
-    struct semaphore *lock_awaited;
+    struct lock *lock_awaited;
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
     struct list_elem sleepelem;
