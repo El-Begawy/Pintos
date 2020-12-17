@@ -206,7 +206,7 @@ thread_create (const char *name, int priority,
 
   /* Add to run queue. */
   thread_unblock (t);
-  if (priority > thread_current()->priority)
+  if (priority > thread_current ()->priority)
     thread_yield ();
   return tid;
 }
@@ -335,6 +335,27 @@ thread_exit (void)
   schedule ();
   NOT_REACHED ();
 }
+/* Calculates a thread's priority according to its current donors and base priority*/
+int
+thread_calculate_priority (void)
+{
+  struct list_elem *e;
+  struct list_elem *j;
+  int new_priority = thread_current ()->base_priority;
+  // iterate over all threads waiting on locks held to update priority
+  for (e = list_begin (&thread_current ()->locks_held); e != list_end (&thread_current ()->locks_held);
+       e = list_next (e))
+    {
+      struct lock *s = list_entry (e, struct lock, lock_elem);
+      for (j = list_begin (&s->semaphore.waiters); j != list_end (&s->semaphore.waiters); j = list_next (j))
+        {
+          int waiter_priority = list_entry(j, struct thread, elem)->priority;
+          if (waiter_priority > new_priority)
+            new_priority = waiter_priority;
+        }
+    }
+  return new_priority;
+}
 
 /* Yields the CPU.  The current thread is not put to sleep and
    may be scheduled again immediately at the scheduler's whim. */
@@ -375,7 +396,8 @@ thread_foreach (thread_action_func *func, void *aux)
 void
 thread_set_priority (int new_priority)
 {
-    thread_current ()->base_priority = thread_current ()->priority = new_priority;
+  thread_current ()->base_priority = new_priority;
+  thread_current ()->priority = thread_calculate_priority ();
   struct thread *highest_priority_thread = get_highest_priority ();
   if (highest_priority_thread != idle_thread && highest_priority_thread->priority > new_priority)
     thread_yield ();
@@ -506,7 +528,7 @@ init_thread (struct thread *t, const char *name, int priority)
   t->stack = (uint8_t *) t + PGSIZE;
   t->base_priority = t->priority = priority;
   t->magic = THREAD_MAGIC;
-  list_init(&t->locks_held);
+  list_init (&t->locks_held);
   t->lock_awaited = NULL;
 
   old_level = intr_disable ();

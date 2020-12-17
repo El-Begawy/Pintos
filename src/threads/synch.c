@@ -129,8 +129,8 @@ void priority_donate (struct thread *curr, int max_priority, int depth)
   if (curr->lock_awaited == NULL) return;
 
   struct thread *next = curr->lock_awaited->holder;
-  if(next != NULL)
-      priority_donate (next, max_priority, depth + 1);
+  if (next != NULL)
+    priority_donate (next, max_priority, depth + 1);
 
 }
 
@@ -241,18 +241,19 @@ lock_acquire (struct lock *lock)
   ASSERT (!lock_held_by_current_thread (lock));
 
   //need better synchronization here
-  struct thread*  curr = thread_current();
-  enum intr_level old_level = intr_disable();
+  struct thread *curr = thread_current ();
+  enum intr_level old_level = intr_disable ();
 
-    if(lock->holder != NULL){
-        thread_current ()->lock_awaited = lock;
-        priority_donate(curr, -1, 0);
+  if (lock->holder != NULL)
+    {
+      thread_current ()->lock_awaited = lock;
+      priority_donate (curr, -1, 0);
     }
   sema_down (&lock->semaphore);
   list_push_back (&curr->locks_held, &lock->lock_elem);
   curr->lock_awaited = NULL;
   lock->holder = thread_current ();
-  intr_set_level(old_level);
+  intr_set_level (old_level);
 }
 
 /* Tries to acquires LOCK and returns true if successful or false
@@ -286,30 +287,13 @@ lock_release (struct lock *lock)
   ASSERT (lock != NULL);
   ASSERT (lock_held_by_current_thread (lock));
 
-    //update donations
-    struct thread *curr = thread_current ();
-    enum intr_level old_level = intr_disable();
-    list_remove(&lock->lock_elem);
-    struct list_elem *e;
-    struct list_elem *j;
-    int new_priority = thread_current()->base_priority;
-    // iterate over all threads waiting on locks held to update priority
-    for (e = list_begin (&thread_current()->locks_held); e != list_end (&thread_current()->locks_held);
-         e = list_next (e))
-    {
-        struct lock *s = list_entry (e, struct lock, lock_elem);
-        for (j = list_begin (&s->semaphore.waiters); j != list_end (&s->semaphore.waiters); j = list_next (j)){
-            int waiter_priority = list_entry(j,struct thread,elem)->priority;
-            if(waiter_priority > new_priority)
-                new_priority = waiter_priority;
-        }
-
-    }
-    thread_current()->priority = new_priority;
-    intr_set_level(old_level);
-
-
-    lock->holder = NULL;
+  //update donations
+  struct thread *curr = thread_current ();
+  enum intr_level old_level = intr_disable ();
+  list_remove (&lock->lock_elem);
+  thread_current ()->priority = thread_calculate_priority ();
+  intr_set_level (old_level);
+  lock->holder = NULL;
   sema_up (&lock->semaphore);
 }
 

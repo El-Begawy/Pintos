@@ -121,6 +121,7 @@ tid_t thread_create (const char *name, int priority, thread_func *, void *);
 void thread_block (void);
 void thread_unblock (struct thread *);
 
+int thread_calculate_priority (void);
 bool priority_comp (const struct list_elem *a, const struct list_elem *b, void *AUX UNUSED);
 static struct thread *get_highest_priority (void);
 
