@@ -32,13 +32,13 @@ struct real sub_real_real (struct real x, struct real y)
   new_real.val = x.val - y.val;
   return new_real;
 }
-struct real add_real_int (struct real x, int n)
+struct real add_real_int (struct real x, int64_t n)
 {
   struct real new_real;
   new_real.val = x.val + int_to_real (n).val;
   return new_real;
 }
-struct real sub_real_int (struct real x, int n)
+struct real sub_real_int (struct real x, int64_t n)
 {
   struct real new_real;
   new_real.val = x.val - int_to_real (n).val;
@@ -50,7 +50,7 @@ struct real mul_real_real (struct real x, struct real y)
   new_real.val = (((int64_t) x.val) * y.val) >> FIXED_POINT;
   return new_real;
 }
-struct real mul_real_int (struct real x, int n)
+struct real mul_real_int (struct real x, int64_t n)
 {
   x.val *= n;
   return x;
@@ -61,7 +61,7 @@ struct real div_real_real (struct real x, struct real y)
   new_real.val = (((int64_t) x.val) << FIXED_POINT) / y.val;
   return new_real;
 }
-struct real div_real_int (struct real x, int n)
+struct real div_real_int (struct real x, int64_t n)
 {
   x.val /= n;
   return x;

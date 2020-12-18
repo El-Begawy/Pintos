@@ -78,10 +78,12 @@ static void idle (void *aux UNUSED);
 static struct thread *running_thread (void);
 static struct thread *next_thread_to_run (void);
 static void init_thread (struct thread *, const char *name, int priority);
+void thead_update_advanced_priority (struct thread *t, void *aux UNUSED);
 static bool is_thread (struct thread *) UNUSED;
 static void *alloc_frame (struct thread *, size_t size);
 static void schedule (void);
 void thread_schedule_tail (struct thread *prev);
+int thread_calculate_advanced_priority (const struct thread *t1);
 static tid_t allocate_tid (void);
 
 /* Initializes the threading system by transforming the code
@@ -155,8 +157,10 @@ thread_tick (void)
       if ((timer_ticks () % TIMER_FREQ) == 0)
         {
           thread_update_load_avg ();
-          thread_foreach (thread_update_recent_cpu, thread_current ());
+          thread_foreach (thread_update_recent_cpu, NULL);
         }
+      if (timer_ticks () % 4 == 0)
+        thread_foreach (thead_update_advanced_priority, NULL);
     }
 
   /* Enforce preemption. */
@@ -469,7 +473,7 @@ void
 thread_update_load_avg (void)
 {
   load_average = add_real_real (div_real_int (mul_real_int (load_average, 59), 60), div_real_int (get_ready_threads_count (), 60));
-  printf("New load avg = %d.%02d\n", thread_get_load_avg()/100, thread_get_load_avg() % 100);
+  //printf ("New load avg = %d.%02d\n", thread_get_load_avg () / 100, thread_get_load_avg () % 100);
 }
 /* Returns 100 times the current thread's recent_cpu value. */
 int
@@ -479,14 +483,17 @@ thread_get_recent_cpu (void)
 }
 
 /* Updates t thread's recent_cpu value */
-void thread_update_recent_cpu (struct thread *t, void *aux)
+void thread_update_recent_cpu (struct thread *t, void *aux UNUSED)
 {
-  struct thread *current_thread = aux;
-  if (current_thread->tid == t->tid)
-    return;
-  struct real load_avg_real = int_to_real (2 * thread_get_load_avg ());
+  struct real load_avg_real = div_real_int (int_to_real (2 * thread_get_load_avg ()), 100);
   struct real recent_cpu_coeff = div_real_real (load_avg_real, add_real_int (load_avg_real, 1));
-  thread_current ()->recent_cpu = add_real_int (mul_real_real (t->recent_cpu, recent_cpu_coeff), t->nice);
+  t->recent_cpu = add_real_int (mul_real_real (t->recent_cpu, recent_cpu_coeff), t->nice);
+}
+
+/* Updates t thread's recent_cpu value */
+void thead_update_advanced_priority (struct thread *t, void *aux UNUSED)
+{
+  t->priority = thread_calculate_advanced_priority (t);
 }
 
 /* Increments the currently running thread's recent cpu by 1 */
@@ -582,11 +589,19 @@ init_thread (struct thread *t, const char *name, int priority)
   t->status = THREAD_BLOCKED;
   strlcpy (t->name, name, sizeof t->name);
   t->stack = (uint8_t *) t + PGSIZE;
-  t->base_priority = t->priority = priority;
+  t->recent_cpu = int_to_real (0);
+  t->nice = 0;
+  if (!thread_mlfqs)
+    {
+      t->base_priority = t->priority = priority;
+    }
+  else
+    {
+      t->priority = thread_calculate_advanced_priority (t);
+    }
   t->magic = THREAD_MAGIC;
   list_init (&t->locks_held);
   t->lock_awaited = NULL;
-  t->nice = 0;
 
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
@@ -611,6 +626,12 @@ bool priority_comp (const struct list_elem *a, const struct list_elem *b, void *
   int a_priority = (list_entry(a, struct thread, elem))->priority;
   int b_priority = (list_entry(b, struct thread, elem))->priority;
   return a_priority < b_priority;
+}
+int thread_calculate_advanced_priority (const struct thread *t1)
+{
+  struct real priority_1 = sub_real_real (sub_real_real (int_to_real (PRI_MAX), div_real_int (t1->recent_cpu, 4)),
+                                          mul_real_int(int_to_real (t1->nice), 2));
+  return real_truncate (priority_1);
 }
 
 /* Returns the highest ready priority thread */

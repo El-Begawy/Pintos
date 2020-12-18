@@ -246,7 +246,10 @@ lock_acquire (struct lock *lock)
   if (lock->holder != NULL)
     {
       thread_current ()->lock_awaited = lock;
-      priority_donate (curr, -1, 0);
+      if (!thread_mlfqs)
+        {
+          priority_donate (curr, -1, 0);
+        }
     }
   sema_down (&lock->semaphore);
   list_push_back (&curr->locks_held, &lock->lock_elem);
@@ -290,7 +293,10 @@ lock_release (struct lock *lock)
   struct thread *curr = thread_current ();
   enum intr_level old_level = intr_disable ();
   list_remove (&lock->lock_elem);
-  thread_current ()->priority = thread_calculate_priority ();
+  if (!thread_mlfqs)
+    {
+      thread_current ()->priority = thread_calculate_priority ();
+    }
   intr_set_level (old_level);
   lock->holder = NULL;
   sema_up (&lock->semaphore);
