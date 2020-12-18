@@ -12,6 +12,7 @@
 #include "threads/switch.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
+
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
@@ -43,6 +44,12 @@ static struct thread *initial_thread;
 
 /* Lock used by allocate_tid(). */
 static struct lock tid_lock;
+
+/* The load average for the OS(The average number of Threads competing for the CPU in last minute) */
+static struct real load_average;
+
+/* determines the total number of ready/running threads excluding idle. */
+static struct real ready_threads;
 
 /* Stack frame for kernel_thread(). */
 struct kernel_thread_frame {
@@ -99,6 +106,8 @@ thread_init (void)
   list_init (&ready_list);
   list_init (&all_list);
   list_init (&sleeping_list);
+  load_average = int_to_real (0);
+  ready_threads = int_to_real (0);
   /* Set up a thread structure for the running thread. */
   initial_thread = running_thread ();
   init_thread (initial_thread, "main", PRI_DEFAULT);
@@ -139,6 +148,16 @@ thread_tick (void)
 #endif
   else
     kernel_ticks++;
+
+  if (thread_mlfqs)
+    {
+      thread_increment_recent_cpu ();
+      if ((timer_ticks () % TIMER_FREQ) == 0)
+        {
+          thread_update_load_avg ();
+          thread_foreach (thread_update_recent_cpu, thread_current ());
+        }
+    }
 
   /* Enforce preemption. */
   if (++thread_ticks >= TIME_SLICE)
@@ -224,6 +243,7 @@ thread_block (void)
   ASSERT (intr_get_level () == INTR_OFF);
 
   thread_current ()->status = THREAD_BLOCKED;
+  ready_threads = sub_real_int (ready_threads, 1);
   schedule ();
 }
 
@@ -245,6 +265,7 @@ thread_unblock (struct thread *t)
   old_level = intr_disable ();
   ASSERT (t->status == THREAD_BLOCKED);
   list_push_back (&ready_list, &t->elem);
+  ready_threads = add_real_int (ready_threads, 1);
   t->status = THREAD_READY;
   intr_set_level (old_level);
 }
@@ -268,6 +289,7 @@ thread_sleep (int64_t ticks)
   t->status = THREAD_SLEEP;
   t->time_to_wake = ticks;
   list_insert_ordered (&sleeping_list, &t->sleepelem, &thread_time_comparator, NULL);
+  ready_threads = sub_real_int (ready_threads, 1);
   schedule ();
   intr_set_level (old_level);
 }
@@ -280,6 +302,7 @@ thread_unsleep (struct thread *t)
   enum intr_level old_level = intr_disable ();
   t->status = THREAD_READY;
   list_push_back (&ready_list, &t->elem);
+  ready_threads = add_real_int (ready_threads, 1);
   intr_set_level (old_level);
 }
 /* Returns the name of the running thread. */
@@ -331,6 +354,7 @@ thread_exit (void)
      when it calls thread_schedule_tail(). */
   intr_disable ();
   list_remove (&thread_current ()->allelem);
+  ready_threads = sub_real_int (ready_threads, 1);
   thread_current ()->status = THREAD_DYING;
   schedule ();
   NOT_REACHED ();
@@ -412,33 +436,65 @@ thread_get_priority (void)
 
 /* Sets the current thread's nice value to NICE. */
 void
-thread_set_nice (int nice UNUSED)
+thread_set_nice (int nice)
 {
-  /* Not yet implemented. */
+  ASSERT(is_thread (thread_current ()));
+  ASSERT(!intr_context ());
+  enum intr_level old_level = intr_disable ();
+  thread_current ()->nice = nice;
+  intr_set_level (old_level);
 }
 
 /* Returns the current thread's nice value. */
 int
 thread_get_nice (void)
 {
-  /* Not yet implemented. */
-  return 0;
+  ASSERT(is_thread (thread_current ()));
+  return thread_current ()->nice;
 }
 
+struct real get_ready_threads_count (void)
+{
+  int sz = list_size (&ready_list);
+  return int_to_real (sz + (thread_current () != idle_thread));
+}
 /* Returns 100 times the system load average. */
 int
 thread_get_load_avg (void)
 {
-  /* Not yet implemented. */
-  return 0;
+  return real_round (mul_real_real (int_to_real (100), load_average));
 }
 
+void
+thread_update_load_avg (void)
+{
+  load_average = add_real_real (div_real_int (mul_real_int (load_average, 59), 60), div_real_int (get_ready_threads_count (), 60));
+  printf("New load avg = %d.%02d\n", thread_get_load_avg()/100, thread_get_load_avg() % 100);
+}
 /* Returns 100 times the current thread's recent_cpu value. */
 int
 thread_get_recent_cpu (void)
 {
-  /* Not yet implemented. */
-  return 0;
+  return real_round (mul_real_int (thread_current ()->recent_cpu, 100));
+}
+
+/* Updates t thread's recent_cpu value */
+void thread_update_recent_cpu (struct thread *t, void *aux)
+{
+  struct thread *current_thread = aux;
+  if (current_thread->tid == t->tid)
+    return;
+  struct real load_avg_real = int_to_real (2 * thread_get_load_avg ());
+  struct real recent_cpu_coeff = div_real_real (load_avg_real, add_real_int (load_avg_real, 1));
+  thread_current ()->recent_cpu = add_real_int (mul_real_real (t->recent_cpu, recent_cpu_coeff), t->nice);
+}
+
+/* Increments the currently running thread's recent cpu by 1 */
+void thread_increment_recent_cpu (void)
+{
+  if (thread_current () == idle_thread)
+    return;
+  thread_current ()->recent_cpu = add_real_int (thread_current ()->recent_cpu, 1);
 }
 
 /* Idle thread.  Executes when no other thread is ready to run.
@@ -530,6 +586,7 @@ init_thread (struct thread *t, const char *name, int priority)
   t->magic = THREAD_MAGIC;
   list_init (&t->locks_held);
   t->lock_awaited = NULL;
+  t->nice = 0;
 
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);

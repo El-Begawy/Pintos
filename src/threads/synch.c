@@ -32,6 +32,7 @@
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 
+#define DONATION_DEPTH 8
 /* Initializes semaphore SEMA to VALUE.  A semaphore is a
    nonnegative integer along with two atomic operators for
    manipulating it:
@@ -49,8 +50,6 @@ sema_init (struct semaphore *sema, unsigned value)
   sema->value = value;
   list_init (&sema->waiters);
 }
-
-const int DONATION_DEPTH = 8;
 
 void
 priority_donate (struct thread *curr, int max_priority, int depth);

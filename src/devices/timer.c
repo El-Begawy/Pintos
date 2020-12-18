@@ -92,7 +92,7 @@ timer_sleep (int64_t ticks)
   int64_t start = timer_ticks ();
 
   ASSERT (intr_get_level () == INTR_ON);
-  thread_sleep(start + ticks);
+  thread_sleep (start + ticks);
 }
 
 /* Sleeps for approximately MS milliseconds.  Interrupts must be
@@ -164,7 +164,7 @@ timer_print_stats (void)
 {
   printf ("Timer: %"PRId64" ticks\n", timer_ticks ());
 }
-
+
 /* Timer interrupt handler. */
 static void
 timer_interrupt (struct intr_frame *args UNUSED)
@@ -181,7 +181,7 @@ too_many_loops (unsigned loops)
   /* Wait for a timer tick. */
   int64_t start = ticks;
   while (ticks == start)
-    barrier ();
+      barrier ();
 
   /* Run LOOPS loops. */
   start = ticks;
@@ -203,7 +203,7 @@ static void NO_INLINE
 busy_wait (int64_t loops)
 {
   while (loops-- > 0)
-    barrier ();
+      barrier ();
 }
 
 /* Sleep for approximately NUM/DENOM seconds. */
