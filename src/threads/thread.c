@@ -368,19 +368,15 @@ int
 thread_calculate_priority (void)
 {
   struct list_elem *e;
-  struct list_elem *j;
   int new_priority = thread_current ()->base_priority;
   // iterate over all threads waiting on locks held to update priority
   for (e = list_begin (&thread_current ()->locks_held); e != list_end (&thread_current ()->locks_held);
        e = list_next (e))
     {
       struct lock *s = list_entry (e, struct lock, lock_elem);
-      for (j = list_begin (&s->semaphore.waiters); j != list_end (&s->semaphore.waiters); j = list_next (j))
-        {
-          int waiter_priority = list_entry(j, struct thread, elem)->priority;
-          if (waiter_priority > new_priority)
-            new_priority = waiter_priority;
-        }
+      int waiter_priority = s->holder_priority;
+      if (waiter_priority > new_priority)
+        new_priority = waiter_priority;
     }
   return new_priority;
 }
@@ -630,7 +626,7 @@ bool priority_comp (const struct list_elem *a, const struct list_elem *b, void *
 int thread_calculate_advanced_priority (const struct thread *t1)
 {
   struct real priority_1 = sub_real_real (sub_real_real (int_to_real (PRI_MAX), div_real_int (t1->recent_cpu, 4)),
-                                          mul_real_int(int_to_real (t1->nice), 2));
+                                          mul_real_int (int_to_real (t1->nice), 2));
   return real_truncate (priority_1);
 }
 
