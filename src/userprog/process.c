@@ -106,8 +106,9 @@ int
 process_wait (tid_t child_tid UNUSED)
 {
   static int c = 0;
-  while (c++ <= 500)
-    thread_yield ();
+  sema_down(&thread_current()->child_sema);
+  /*while (c++ <= 500)
+    thread_yield ();*/
 }
 
 /* Free the current process's resources. */
@@ -117,6 +118,7 @@ process_exit (void)
   struct thread *cur = thread_current ();
   uint32_t *pd;
 
+  sema_up(&cur->parent->child_sema);
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
   pd = cur->pagedir;
