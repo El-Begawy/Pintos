@@ -47,7 +47,6 @@ process_execute (const char *argv)
   strlcpy (fn_copy, argv, PGSIZE);
 
   /* Create a new thread to execute FILE_NAME. */
-  printf ("File name = %s\n", file_name);
   tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
   free (copy_str);
   if (tid == TID_ERROR)
@@ -240,13 +239,13 @@ load (const char *file_name_, void (**eip) (void), void **esp)
   ASSERT(file_name != NULL);
   /* Open executable file. */
   file = filesys_open (file_name);
-  free (copy_str);
+
   if (file == NULL)
     {
       printf ("load: %s: open failed\n", file_name);
       goto done;
     }
-
+  free (copy_str);
   /* Read and verify executable header. */
   if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
       || memcmp (ehdr.e_ident, "\177ELF\1\1\1", 7)
@@ -450,7 +449,10 @@ int count_arguments (const char *argv)
   strlcpy (copy_str, argv, len);
   char *token, *save_ptr;
   int sz = 0;
-  printf ("args = %s\n", argv);
+  if (DEBUG_STACK)
+    {
+      printf ("args = %s\n", argv);
+    }
   for (token = strtok_r (copy_str, " ", &save_ptr); token != NULL;
        token = strtok_r (NULL, " ", &save_ptr))
     sz++;
