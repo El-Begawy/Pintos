@@ -485,7 +485,7 @@ void write_arguments_to_stack (void **esp, const char *argv)
   char **argument_list;
   int sz;
   parse_arguments (argv, &argument_list, &sz);
-  uintptr_t *stk_address = (uintptr_t *) malloc (sz);
+  uintptr_t *stk_address = (uintptr_t *) malloc (sizeof (uintptr_t *) * sz);
   ASSERT(sz > 0);
   ASSERT(stk_address != NULL);
   int temp_sz = sz;

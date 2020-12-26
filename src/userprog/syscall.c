@@ -20,7 +20,7 @@ int cnt = 0;
 static void
 syscall_handler (struct intr_frame *f)
 {
-  printf("Code is:%d \n", *(int *)f->esp);
+  //printf("Code is:%d \n", *(int *)f->esp);
   switch (*(int *) f->esp)
     {
       case SYS_HALT:
@@ -101,7 +101,7 @@ uint32_t write_call (void *esp)
   mem_read ((int *) esp + 1, &fd, sizeof (fd));
   mem_read ((int *) esp + 2, &buffer, sizeof (buffer));
   mem_read ((int *) esp + 3, &size, sizeof (size));
-  printf("Size is: %d\n", size);
+  //printf("Size is: %d\n", size);
   if (fd == 1)
     {
       putbuf (buffer, size);
@@ -139,6 +139,7 @@ int mem_read (void *src, void *dist, int size)
 {
   for (int i = 0; i < size; i++)
     {
+      //printf("Reading at %x\n",((uint32_t *) src + i));
       int value = get_user ((uint8_t *) src + i);
       if (value == -1)
         {
