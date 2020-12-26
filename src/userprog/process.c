@@ -51,6 +51,10 @@ process_execute (const char *argv)
   free (copy_str);
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy);
+
+  //wait for child initialization
+  sema_down(&thread_current()->child_sema);
+
   return tid;
 }
 
@@ -72,8 +76,12 @@ start_process (void *file_name_)
 
   /* If load failed, quit. */
   palloc_free_page (file_name);
-  if (!success)
-    thread_exit ();
+  if (!success){
+      sema_up(&thread_current()->parent->child_sema);
+      thread_exit ();
+  }else
+      sema_up(&thread_current()->parent->child_sema);
+
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
@@ -98,7 +106,7 @@ int
 process_wait (tid_t child_tid UNUSED)
 {
   static int c = 0;
-  while (c++ <= 100)
+  while (c++ <= 500)
     thread_yield ();
 }
 
