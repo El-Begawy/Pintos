@@ -511,6 +511,7 @@ void write_arguments_to_stack (void **esp, const char *argv)
   *((uintptr_t *) (*esp)) = temp_sz;
   (*esp) -= 4;
   *((uintptr_t *) (*esp)) = 0;
+  free (argument_list[0]);
   free (stk_address);
   free (argument_list);
   if (DEBUG_STACK)
