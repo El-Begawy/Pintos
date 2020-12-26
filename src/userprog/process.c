@@ -485,7 +485,7 @@ void write_arguments_to_stack (void **esp, const char *argv)
   char **argument_list;
   int sz;
   parse_arguments (argv, &argument_list, &sz);
-  uintptr_t *stk_address = (uintptr_t *) malloc (sz);
+  uintptr_t *stk_address[sz];
   ASSERT(sz > 0);
   ASSERT(stk_address != NULL);
   int temp_sz = sz;
@@ -496,7 +496,7 @@ void write_arguments_to_stack (void **esp, const char *argv)
       stk_address[sz] = (uintptr_t) &(*(*esp));
       memcpy ((*esp), argument_list[sz], len);
     }
-  uintptr_t num_of_filler_bytes = ((uintptr_t) (&*(*esp)) % 4) + 4; // shouldn't it be 4 - the mod?
+  uintptr_t num_of_filler_bytes = ((uintptr_t) (&*(*esp)) % 4) + 4;
   (*esp) -= num_of_filler_bytes;
   memset ((*esp), 0, num_of_filler_bytes);
   sz = temp_sz;
@@ -511,7 +511,6 @@ void write_arguments_to_stack (void **esp, const char *argv)
   *((uintptr_t *) (*esp)) = temp_sz;
   (*esp) -= 4;
   *((uintptr_t *) (*esp)) = 0;
-  free (stk_address);
   free (argument_list);
   if (DEBUG_STACK)
     {
