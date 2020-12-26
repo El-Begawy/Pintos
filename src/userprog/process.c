@@ -496,7 +496,7 @@ void write_arguments_to_stack (void **esp, const char *argv)
       stk_address[sz] = (uintptr_t) &(*(*esp));
       memcpy ((*esp), argument_list[sz], len);
     }
-  uintptr_t num_of_filler_bytes = ((uintptr_t) (&*(*esp)) % 4) + 4;
+  uintptr_t num_of_filler_bytes = ((uintptr_t) (&*(*esp)) % 4) + 4; // shouldn't it be 4 - the mod?
   (*esp) -= num_of_filler_bytes;
   memset ((*esp), 0, num_of_filler_bytes);
   sz = temp_sz;
