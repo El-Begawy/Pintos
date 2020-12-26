@@ -503,7 +503,7 @@ void write_arguments_to_stack (void **esp, const char *argv)
   for (sz--; sz >= 0; sz--)
     {
       (*esp) -= 4;
-      *((int *) (*esp)) = stk_address[sz];
+      *((uintptr_t *) (*esp)) = stk_address[sz];
     }
   (*esp) -= 4;
   *((uintptr_t *) (*esp)) = ((uintptr_t) &**esp + 4);
