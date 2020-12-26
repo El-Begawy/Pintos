@@ -10,18 +10,21 @@ static int get_user (const uint8_t *uaddr);
 static bool put_user (uint8_t *udst, uint8_t byte);
 static int mem_read (void *src, void *dist, int size);
 uint32_t write_call (void *esp);
+void sys_exit (int status);
 
 void
 syscall_init (void)
 {
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
 }
-int cnt = 0;
+
 static void
 syscall_handler (struct intr_frame *f)
 {
-  //printf("Code is:%d \n", *(int *)f->esp);
-  switch (*(int *) f->esp)
+  int code;
+  mem_read(f->esp, &code, sizeof(code));
+  // printf("Code is:%d \n", *(int *)f->esp);
+  switch (code)
     {
       case SYS_HALT:
         {
@@ -30,8 +33,9 @@ syscall_handler (struct intr_frame *f)
         }
       case SYS_EXIT:
         { // TODO EDIT THIS!! wake up parent.. do what needs to be done.. return status.
-          printf("%s: exit(0)\n", thread_current()->name);
-          thread_exit();
+          int status;
+          mem_read ((int *) f->esp + 1, &status, sizeof (status));
+          sys_exit (status);
           break;
         }
       case SYS_EXEC:
@@ -90,7 +94,6 @@ syscall_handler (struct intr_frame *f)
           break;
         }
     }
-
 }
 
 uint32_t write_call (void *esp)
@@ -101,13 +104,12 @@ uint32_t write_call (void *esp)
   mem_read ((int *) esp + 1, &fd, sizeof (fd));
   mem_read ((int *) esp + 2, &buffer, sizeof (buffer));
   mem_read ((int *) esp + 3, &size, sizeof (size));
-  //printf("Size is: %d\n", size);
+  // printf("Size is: %d, dump location is: %x\n", size, (int *) esp + 1);
   if (fd == 1)
     {
       putbuf (buffer, size);
       return size;
     }
-
 
 }
 
@@ -127,7 +129,7 @@ get_user (const uint8_t *uaddr)
  * Returns true if successful, false if a segfault occurred. */
 bool put_user (uint8_t *udst, uint8_t byte)
 {
-  if (((void *) udst) >= PHYS_BASE)
+  if (((void *) udst) > PHYS_BASE)
     return 0;
   int error_code;
   asm ("movl $1f, %0; movb %b2, %1; 1:": "=&a" (error_code), "=m" (*udst) : "q" (byte));
@@ -137,15 +139,20 @@ bool put_user (uint8_t *udst, uint8_t byte)
 /* reads byte array from memory using get_user() */
 int mem_read (void *src, void *dist, int size)
 {
+  //printf("Size is: %d", size);
   for (int i = 0; i < size; i++)
     {
-      //printf("Reading at %x\n",((uint32_t *) src + i));
       int value = get_user ((uint8_t *) src + i);
       if (value == -1)
         {
-          // invalid access .. should implement later.. (hopefully)
+          sys_exit(-1);
         }
       *(int8_t *) (dist + i) = value & (0xff);
     }
   return size;
+}
+void sys_exit (int status)
+{
+  printf ("%s: exit(%d)\n", thread_current ()->name, status);
+  thread_exit ();
 }
