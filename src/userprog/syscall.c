@@ -16,10 +16,14 @@ uint32_t write_call (void *esp);
 void sys_exit (int status);
 static bool create_file (void *esp);
 static int open_file (void *esp);
+
+struct lock file_lock;
+
 void
 syscall_init (void)
 {
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
+  lock_init (&file_lock);
 }
 
 static void
@@ -133,7 +137,10 @@ static bool create_file (void *esp)
     {
       return false;
     }
-  return filesys_create (buffer, size);
+  lock_acquire (&file_lock);
+  bool result = filesys_create (buffer, size);
+  lock_release (&file_lock);
+  return result;
 }
 
 uint32_t write_call (void *esp)
@@ -151,6 +158,12 @@ uint32_t write_call (void *esp)
       return size;
     }
 
+}
+
+void sys_exit (int status)
+{
+  printf ("%s: exit(%d)\n", thread_current ()->name, status);
+  thread_exit ();
 }
 
 /* Reads a byte at user virtual address UADDR.UADDR must be below PHYS_BASE.
@@ -191,8 +204,9 @@ int mem_read (void *src, void *dist, int size)
     }
   return size;
 }
-void sys_exit (int status)
-{
-  printf ("%s: exit(%d)\n", thread_current ()->name, status);
-  thread_exit ();
-}
+
+struct file_descriptor {
+    int fd;
+    struct list_elem file_element;
+    struct file* file;
+};
