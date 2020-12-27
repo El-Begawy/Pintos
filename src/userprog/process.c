@@ -22,6 +22,7 @@
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
 
+
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
    before process_execute() returns.  Returns the new process's
@@ -51,7 +52,14 @@ process_execute (const char *argv)
   free (copy_str);
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy);
-
+  else{
+      // add child to child_list
+      enum intr_level old_level = intr_disable ();
+      struct child_process *cp = malloc(sizeof(struct child_process));
+      cp->pid = tid;
+      list_push_front(&thread_current()->child_list, &cp->child_elem);
+      intr_set_level (old_level);
+  }
   //wait for child initialization
   sema_down(&thread_current()->child_sema);
 
@@ -105,9 +113,29 @@ start_process (void *file_name_)
 int
 process_wait (tid_t child_tid UNUSED)
 {
-  static int c = 0;
-  sema_down(&thread_current()->child_sema);
-  /*while (c++ <= 500)
+    if(list_empty(&thread_current()->child_list))
+    {
+        return -1;
+    }
+    struct thread *curr = thread_current ();
+    struct child_process *child = NULL;
+    struct list_elem *e;
+
+    //check if there exist a child with the given tid
+
+    for (e = list_begin (&curr->child_list); e != list_end (&curr->child_list);
+         e = list_next (e)){
+        struct child_process *cp = list_entry (e, struct child_process, child_elem);
+        if(cp->pid == child_tid)
+            child = cp;
+    }
+    if(child == NULL)
+        return -1;
+    list_remove(&child->child_elem);
+
+    sema_down(&thread_current()->child_sema);
+  /*static int c = 0;
+    while (c++ <= 500)
     thread_yield ();*/
 }
 
@@ -575,3 +603,5 @@ install_page (void *upage, void *kpage, bool writable)
   return (pagedir_get_page (t->pagedir, upage) == NULL
           && pagedir_set_page (t->pagedir, upage, kpage, writable));
 }
+
+

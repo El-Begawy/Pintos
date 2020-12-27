@@ -102,7 +102,7 @@ struct thread
     //added for userprog
     struct thread* parent;
     struct semaphore child_sema;
-
+    struct list child_list;
 
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
