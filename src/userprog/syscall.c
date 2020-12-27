@@ -7,6 +7,7 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 #include <string.h>
+#include <threads/malloc.h>
 
 static void syscall_handler (struct intr_frame *);
 static int get_user (const uint8_t *uaddr);
@@ -16,6 +17,7 @@ uint32_t write_call (void *esp);
 void sys_exit (int status);
 static bool create_file (void *esp);
 static int open_file (void *esp);
+void add_file_desc_to_list (struct file_descriptor *file_desc);
 
 struct lock file_lock;
 
@@ -118,10 +120,30 @@ static int open_file (void *esp)
     {
       return -1;
     }
+  lock_acquire (&file_lock);
   struct file *file = filesys_open (buffer);
-  return (file == NULL ? -1 : 2);
+  if (file == NULL)
+    {
+      lock_release (&file_lock);
+      return -1;
+    }
+  struct file_descriptor *file_desc = malloc (sizeof (struct file_descriptor));
+  file_desc->file = file;
+  add_file_desc_to_list (file_desc);
+  lock_release (&file_lock);
+  return file_desc->fd;
 }
-
+void add_file_desc_to_list (struct file_descriptor *file_desc)
+{
+  struct thread *t = thread_current ();
+  int len = (int) list_size (&t->files_owned);
+  if (len == 0)
+    file_desc->fd = 2;
+  else
+    file_desc->fd = list_entry(list_tail (&t->files_owned), struct file_descriptor, fd_elem)->fd + 1;
+  printf ("Push back call\n");
+  list_push_back (&t->files_owned, &(file_desc->fd_elem));
+}
 /* Creates the file whose name is stored in *esp + 1 after validating it */
 static bool create_file (void *esp)
 {
@@ -204,9 +226,3 @@ int mem_read (void *src, void *dist, int size)
     }
   return size;
 }
-
-struct file_descriptor {
-    int fd;
-    struct list_elem file_element;
-    struct file* file;
-};
