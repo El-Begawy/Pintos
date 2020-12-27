@@ -1,9 +1,12 @@
 #include "userprog/syscall.h"
 #include <stdio.h>
 #include <syscall-nr.h>
+#include <devices/shutdown.h>
+#include <filesys/filesys.h>
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+#include <string.h>
 
 static void syscall_handler (struct intr_frame *);
 static int get_user (const uint8_t *uaddr);
@@ -11,6 +14,8 @@ static bool put_user (uint8_t *udst, uint8_t byte);
 static int mem_read (void *src, void *dist, int size);
 uint32_t write_call (void *esp);
 void sys_exit (int status);
+bool create_file (void *esp);
+int mem_read_char_array (char *src, char **dist);
 
 void
 syscall_init (void)
@@ -22,13 +27,13 @@ static void
 syscall_handler (struct intr_frame *f)
 {
   int code;
-  mem_read(f->esp, &code, sizeof(code));
+  mem_read (f->esp, &code, sizeof (code));
   // printf("Code is:%d \n", *(int *)f->esp);
   switch (code)
     {
       case SYS_HALT:
         {
-
+          shutdown_power_off ();
           break;
         }
       case SYS_EXIT:
@@ -50,7 +55,7 @@ syscall_handler (struct intr_frame *f)
         }
       case SYS_CREATE:
         {
-
+          f->eax = create_file (f->esp);
           break;
         }
       case SYS_REMOVE:
@@ -94,6 +99,23 @@ syscall_handler (struct intr_frame *f)
           break;
         }
     }
+}
+bool create_file (void *esp)
+{
+
+  const void *buffer;
+  mem_read ((int *) esp + 1, &buffer, sizeof (buffer));
+  int32_t size = (*((uintptr_t *) esp + 2));
+  if (buffer == NULL || get_user ((uint8_t *) buffer) == -1)
+    {
+      sys_exit (-1);
+    }
+  uint32_t len = strlen (buffer);
+  if (len == 0 || len >= 64)
+    {
+      return false;
+    }
+  return filesys_create (buffer, size);
 }
 
 uint32_t write_call (void *esp)
@@ -145,7 +167,7 @@ int mem_read (void *src, void *dist, int size)
       int value = get_user ((uint8_t *) src + i);
       if (value == -1)
         {
-          sys_exit(-1);
+          sys_exit (-1);
         }
       *(int8_t *) (dist + i) = value & (0xff);
     }
