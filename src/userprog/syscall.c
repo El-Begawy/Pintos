@@ -14,9 +14,8 @@ static bool put_user (uint8_t *udst, uint8_t byte);
 static int mem_read (void *src, void *dist, int size);
 uint32_t write_call (void *esp);
 void sys_exit (int status);
-bool create_file (void *esp);
-int mem_read_char_array (char *src, char **dist);
-
+static bool create_file (void *esp);
+static int open_file (void *esp);
 void
 syscall_init (void)
 {
@@ -65,7 +64,7 @@ syscall_handler (struct intr_frame *f)
         }
       case SYS_OPEN:
         {
-
+          f->eax = open_file (f->esp);
           break;
         }
       case SYS_FILESIZE:
@@ -100,10 +99,29 @@ syscall_handler (struct intr_frame *f)
         }
     }
 }
-bool create_file (void *esp)
-{
 
-  const void *buffer;
+/* Opens the file whose name is stored in *esp + 1 after validating it */
+static int open_file (void *esp)
+{
+  const char *buffer;
+  mem_read ((int *) esp + 1, &buffer, sizeof (buffer));
+  if (buffer == NULL || get_user ((uint8_t *) buffer) == -1)
+    {
+      sys_exit (-1);
+    }
+  uint32_t len = strlen (buffer);
+  if (len == 0 || len >= 64)
+    {
+      return -1;
+    }
+  struct file *file = filesys_open (buffer);
+  return (file == NULL ? -1 : 2);
+}
+
+/* Creates the file whose name is stored in *esp + 1 after validating it */
+static bool create_file (void *esp)
+{
+  const char *buffer;
   mem_read ((int *) esp + 1, &buffer, sizeof (buffer));
   int32_t size = (*((uintptr_t *) esp + 2));
   if (buffer == NULL || get_user ((uint8_t *) buffer) == -1)
