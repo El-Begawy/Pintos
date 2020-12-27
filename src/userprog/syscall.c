@@ -7,16 +7,22 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 #include <string.h>
+#include <filesys/file.h>
+#include <devices/input.h>
 
 static void syscall_handler (struct intr_frame *);
 static int get_user (const uint8_t *uaddr);
 static bool put_user (uint8_t *udst, uint8_t byte);
 static int mem_read (void *src, void *dist, int size);
-uint32_t write_call (void *esp);
-void sys_exit (int status);
+static uint32_t write_call (void *esp);
+static uint32_t read_call (void *esp);
+static void sys_exit (int status);
 static bool create_file (void *esp);
 static int open_file (void *esp);
-
+static int filesize (int fd);
+static void sys_seek (void *esp);
+static unsigned sys_tell (int fd);
+static struct file_descriptor *find_descriptor_by_fd (int fd);
 struct lock file_lock;
 
 void
@@ -73,12 +79,14 @@ syscall_handler (struct intr_frame *f)
         }
       case SYS_FILESIZE:
         {
-
+          int fd;
+          mem_read ((int *) f->esp + 1, &fd, sizeof (fd));
+          f->eax = filesize (fd);
           break;
         }
       case SYS_READ:
         {
-
+          f->eax = read_call (f->esp);
           break;
         }
       case SYS_WRITE:
@@ -88,12 +96,14 @@ syscall_handler (struct intr_frame *f)
         }
       case SYS_SEEK:
         {
-
+          sys_seek (f->esp);
           break;
         }
       case SYS_TELL:
         {
-
+          int fd;
+          mem_read ((int *) f->esp + 1, &fd, sizeof (fd));
+          f->eax = sys_tell (fd);
           break;
         }
       case SYS_CLOSE:
@@ -102,6 +112,42 @@ syscall_handler (struct intr_frame *f)
           break;
         }
     }
+}
+
+/* returns the position of next byte to be read in file*/
+static unsigned sys_tell (int fd)
+{
+  struct file_descriptor *descriptor = find_descriptor_by_fd (fd);
+  if (descriptor == NULL) return -1;
+  lock_acquire (&file_lock);
+  unsigned sz = file_tell (descriptor->file);
+  lock_release (&file_lock);
+  return sz;
+}
+
+/* Seeks a specific offset in a file */
+static void sys_seek (void *esp)
+{
+  int fd;
+  unsigned pos;
+  mem_read ((int *) esp + 1, &fd, sizeof (fd));
+  mem_read ((int *) esp + 2, &pos, sizeof (pos));
+  struct file_descriptor *descriptor = find_descriptor_by_fd (fd);
+  if (descriptor == NULL) return;
+  lock_acquire (&file_lock);
+  file_seek (descriptor->file, pos);
+  lock_release (&file_lock);
+}
+
+/* Finds file size given the fd of the open file */
+static int filesize (int fd)
+{
+  struct file_descriptor *descriptor = find_descriptor_by_fd (fd);
+  if (descriptor == NULL) return -1;
+  lock_acquire (&file_lock);
+  int sz = file_length (descriptor->file);
+  lock_release (&file_lock);
+  return sz;
 }
 
 /* Opens the file whose name is stored in *esp + 1 after validating it */
@@ -143,6 +189,47 @@ static bool create_file (void *esp)
   return result;
 }
 
+/* Reads from the file whose fd is given, transfers SIZE bytes to buffer
+ * where buffer and SIZE are args given in esp
+ * returns size of bytes read
+ */
+uint32_t read_call (void *esp)
+{
+  int fd;
+  void *buffer;
+  unsigned size;
+  mem_read ((int *) esp + 1, &fd, sizeof (fd));
+  mem_read ((int *) esp + 2, &buffer, sizeof (buffer));
+  mem_read ((int *) esp + 3, &size, sizeof (size));
+  if (fd == 0)
+    {
+      lock_acquire (&file_lock);
+      for (int i = 0; i < size; i++)
+        {
+          if (!put_user (buffer, input_getc ()))
+            {
+              lock_release (&file_lock);
+              sys_exit (-1);
+            }
+        }
+      lock_release (&file_lock);
+      return size;
+    }
+  else
+    {
+      struct file_descriptor *descriptor = find_descriptor_by_fd (fd);
+      if (descriptor == NULL) return -1;
+      lock_acquire (&file_lock);
+      int res = file_read (descriptor->file, buffer, size);
+      lock_release (&file_lock);
+      return res;
+    }
+}
+
+/* Writes to the file whose fd is given, transfers SIZE bytes from buffer
+ * where buffer and SIZE are args given in esp
+ * returns size of bytes written
+ */
 uint32_t write_call (void *esp)
 {
   int fd;
@@ -157,7 +244,15 @@ uint32_t write_call (void *esp)
       putbuf (buffer, size);
       return size;
     }
-
+  else
+    {
+      struct file_descriptor *descriptor = find_descriptor_by_fd (fd);
+      if (descriptor == NULL) return 0;
+      lock_acquire (&file_lock);
+      int res = file_write (descriptor->file, buffer, size);
+      lock_release (&file_lock);
+      return res;
+    }
 }
 
 void sys_exit (int status)
@@ -205,8 +300,15 @@ int mem_read (void *src, void *dist, int size)
   return size;
 }
 
-struct file_descriptor {
-    int fd;
-    struct list_elem file_element;
-    struct file* file;
-};
+/* Given an fd, finds the file descriptor of the given fd */
+struct file_descriptor *find_descriptor_by_fd (int fd)
+{
+  struct file_descriptor *descriptor = NULL;
+  for (struct list_elem *iter = list_begin (&thread_current ()->files_owned);
+       iter != list_end (&thread_current ()->files_owned); iter = list_next (iter))
+    {
+      if (list_entry(iter, struct file_descriptor, file_element)->fd == fd)
+        descriptor = list_entry(iter, struct file_descriptor, file_element);
+    }
+  return descriptor;
+}
