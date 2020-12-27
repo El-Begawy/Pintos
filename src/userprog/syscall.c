@@ -7,6 +7,7 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 #include <string.h>
+#include <threads/malloc.h>
 #include <filesys/file.h>
 #include <devices/input.h>
 
@@ -23,6 +24,8 @@ static int filesize (int fd);
 static void sys_seek (void *esp);
 static unsigned sys_tell (int fd);
 static struct file_descriptor *find_descriptor_by_fd (int fd);
+void add_file_desc_to_list (struct file_descriptor *file_desc);
+
 struct lock file_lock;
 
 void
@@ -164,10 +167,30 @@ static int open_file (void *esp)
     {
       return -1;
     }
+  lock_acquire (&file_lock);
   struct file *file = filesys_open (buffer);
-  return (file == NULL ? -1 : 2);
+  if (file == NULL)
+    {
+      lock_release (&file_lock);
+      return -1;
+    }
+  struct file_descriptor *file_desc = malloc (sizeof (struct file_descriptor));
+  file_desc->file = file;
+  add_file_desc_to_list (file_desc);
+  lock_release (&file_lock);
+  return file_desc->fd;
 }
-
+void add_file_desc_to_list (struct file_descriptor *file_desc)
+{
+  struct thread *t = thread_current ();
+  int len = (int) list_size (&t->files_owned);
+  if (len == 0)
+    file_desc->fd = 2;
+  else
+    file_desc->fd = list_entry(list_tail (&t->files_owned), struct file_descriptor, fd_elem)->fd + 1;
+  printf ("Push back call\n");
+  list_push_back (&t->files_owned, &(file_desc->fd_elem));
+}
 /* Creates the file whose name is stored in *esp + 1 after validating it */
 static bool create_file (void *esp)
 {
@@ -307,7 +330,7 @@ struct file_descriptor *find_descriptor_by_fd (int fd)
   for (struct list_elem *iter = list_begin (&thread_current ()->files_owned);
        iter != list_end (&thread_current ()->files_owned); iter = list_next (iter))
     {
-      if (list_entry(iter, struct file_descriptor, file_element)->fd == fd)
+      if (list_entry(iter, struct file_descriptor, )->fd == fd)
         descriptor = list_entry(iter, struct file_descriptor, file_element);
     }
   return descriptor;
