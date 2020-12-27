@@ -10,6 +10,7 @@
 #include <threads/malloc.h>
 #include <filesys/file.h>
 #include <devices/input.h>
+#include <threads/palloc.h>
 
 static void syscall_handler (struct intr_frame *);
 static int get_user (const uint8_t *uaddr);
@@ -174,7 +175,7 @@ static int open_file (void *esp)
       lock_release (&file_lock);
       return -1;
     }
-  struct file_descriptor *file_desc = malloc (sizeof (struct file_descriptor));
+  struct file_descriptor *file_desc = palloc_get_page (0);
   file_desc->file = file;
   add_file_desc_to_list (file_desc);
   lock_release (&file_lock);
@@ -185,10 +186,15 @@ void add_file_desc_to_list (struct file_descriptor *file_desc)
   struct thread *t = thread_current ();
   int len = (int) list_size (&t->files_owned);
   if (len == 0)
-    file_desc->fd = 2;
+    {
+      file_desc->fd = 2;
+    }
   else
-    file_desc->fd = list_entry(list_tail (&t->files_owned), struct file_descriptor, fd_elem)->fd + 1;
-  printf ("Push back call\n");
+    {
+      file_desc->fd = list_entry(list_back (&t->files_owned), struct file_descriptor, fd_elem)->fd + 1;
+      //printf ("here: %d\n", file_desc->fd);
+    }
+  //printf ("%d\n", file_desc->fd);
   list_push_back (&t->files_owned, &(file_desc->fd_elem));
 }
 /* Creates the file whose name is stored in *esp + 1 after validating it */
@@ -224,6 +230,10 @@ uint32_t read_call (void *esp)
   mem_read ((int *) esp + 1, &fd, sizeof (fd));
   mem_read ((int *) esp + 2, &buffer, sizeof (buffer));
   mem_read ((int *) esp + 3, &size, sizeof (size));
+  if (buffer == NULL || get_user ((uint8_t *) buffer) == -1)
+    {
+      sys_exit (-1);
+    }
   if (fd == 0)
     {
       lock_acquire (&file_lock);
@@ -261,6 +271,10 @@ uint32_t write_call (void *esp)
   mem_read ((int *) esp + 1, &fd, sizeof (fd));
   mem_read ((int *) esp + 2, &buffer, sizeof (buffer));
   mem_read ((int *) esp + 3, &size, sizeof (size));
+  if (buffer == NULL || get_user ((uint8_t *) buffer) == -1)
+    {
+      sys_exit (-1);
+    }
   // printf("Size is: %d, dump location is: %x\n", size, (int *) esp + 1);
   if (fd == 1)
     {
@@ -330,8 +344,8 @@ struct file_descriptor *find_descriptor_by_fd (int fd)
   for (struct list_elem *iter = list_begin (&thread_current ()->files_owned);
        iter != list_end (&thread_current ()->files_owned); iter = list_next (iter))
     {
-      if (list_entry(iter, struct file_descriptor, )->fd == fd)
-        descriptor = list_entry(iter, struct file_descriptor, file_element);
+      if (list_entry(iter, struct file_descriptor, fd_elem)->fd == fd)
+        descriptor = list_entry(iter, struct file_descriptor, fd_elem);
     }
   return descriptor;
 }
