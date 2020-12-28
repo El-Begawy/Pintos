@@ -185,6 +185,13 @@ thread_create (const char *name, int priority,
   /* Initialize thread. */
   init_thread (t, name, priority);
   tid = t->tid = allocate_tid ();
+
+  //initialize process pcb and add it to parent
+  t->process_control = malloc(sizeof(struct pcb));
+  t-> process_control->used = 0;
+  sema_init(&t->process_control->parent_waiting_sema,0);
+  if(t->parent != NULL)
+      list_push_front(&t->parent->child_list, &t->process_control->child_elem);
   t->process_control->pid = t->tid;
 
 
@@ -477,12 +484,6 @@ init_thread (struct thread *t, const char *name, int priority)
   list_init (&t->child_list);
   list_init (&t->files_owned);
 
-  //initialize process pcb and add it to parent
-  t->process_control = malloc(sizeof(struct pcb));
-  t-> process_control->used = 0;
-  sema_init(&t->process_control->parent_waiting_sema,0);
-  if(t->parent != NULL)
-    list_push_front(&t->parent->child_list, &t->process_control->child_elem);
 
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
