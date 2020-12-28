@@ -52,14 +52,7 @@ process_execute (const char *argv)
   free (copy_str);
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy);
-  else{
-      // add child to child_list
-      enum intr_level old_level = intr_disable ();
-      struct child_process *cp = malloc(sizeof(struct child_process));
-      cp->pid = tid;
-      list_push_front(&thread_current()->child_list, &cp->child_elem);
-      intr_set_level (old_level);
-  }
+
   //wait for child initialization
   sema_down(&thread_current()->child_sema);
 
@@ -118,22 +111,25 @@ process_wait (tid_t child_tid UNUSED)
         return -1;
     }
     struct thread *curr = thread_current ();
-    struct child_process *child = NULL;
+    struct pcb *child = NULL;
     struct list_elem *e;
 
     //check if there exist a child with the given tid
 
     for (e = list_begin (&curr->child_list); e != list_end (&curr->child_list);
          e = list_next (e)){
-        struct child_process *cp = list_entry (e, struct child_process, child_elem);
+        struct pcb *cp = list_entry (e, struct pcb, child_elem);
         if(cp->pid == child_tid)
             child = cp;
     }
     if(child == NULL)
         return -1;
-    list_remove(&child->child_elem);
 
-    sema_down(&thread_current()->child_sema);
+    if(child->used == 0){
+        sema_down(&child->parent_waiting_sema);
+    }
+    child->used = 1;
+    return child->exit_code;
   /*static int c = 0;
     while (c++ <= 500)
     thread_yield ();*/
@@ -146,7 +142,6 @@ process_exit (void)
   struct thread *cur = thread_current ();
   uint32_t *pd;
 
-  sema_up(&cur->parent->child_sema);
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
   pd = cur->pagedir;

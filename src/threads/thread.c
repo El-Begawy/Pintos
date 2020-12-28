@@ -4,6 +4,7 @@
 #include <random.h>
 #include <stdio.h>
 #include <string.h>
+#include <userprog/process.h>
 #include "threads/flags.h"
 #include "threads/interrupt.h"
 #include "threads/intr-stubs.h"
@@ -11,6 +12,8 @@
 #include "threads/switch.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
+#include "threads/malloc.h"
+
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
@@ -182,8 +185,11 @@ thread_create (const char *name, int priority,
   /* Initialize thread. */
   init_thread (t, name, priority);
   tid = t->tid = allocate_tid ();
+  t->process_control->pid = t->tid;
 
-  /* Stack frame for kernel_thread(). */
+
+
+    /* Stack frame for kernel_thread(). */
   kf = alloc_frame (t, sizeof *kf);
   kf->eip = NULL;
   kf->function = function;
@@ -464,11 +470,19 @@ init_thread (struct thread *t, const char *name, int priority)
   t->priority = priority;
   t->magic = THREAD_MAGIC;
 
+
   //userprog
   sema_init(&t->child_sema,0);
   t->parent = running_thread();
   list_init (&t->child_list);
   list_init (&t->files_owned);
+
+  //initialize process pcb and add it to parent
+  t->process_control = malloc(sizeof(struct pcb));
+  t-> process_control->used = 0;
+  sema_init(&t->process_control->parent_waiting_sema,0);
+  if(t->parent != NULL)
+    list_push_front(&t->parent->child_list, &t->process_control->child_elem);
 
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);

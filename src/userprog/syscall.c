@@ -28,6 +28,7 @@ static struct file_descriptor *find_descriptor_by_fd (int fd);
 static void add_file_desc_to_list (struct file_descriptor *file_desc);
 static void sys_close (int fd);
 static int sys_execute (void *esp);
+static int sys_wait (tid_t pid);
 
 struct lock file_lock;
 
@@ -65,7 +66,9 @@ syscall_handler (struct intr_frame *f)
         }
       case SYS_WAIT:
         {
-
+          tid_t pid;
+          mem_read ((tid_t *) f->esp + 1, &pid, sizeof (pid));
+          f->eax = sys_wait(pid);
           break;
         }
       case SYS_CREATE:
@@ -334,8 +337,16 @@ uint32_t write_call (void *esp)
 
 void sys_exit (int status)
 {
+  struct thread *curr = thread_current ();
+  curr->process_control->exit_code = status;
+  sema_up(&curr->process_control->parent_waiting_sema);
   printf ("%s: exit(%d)\n", thread_current ()->name, status);
   thread_exit ();
+}
+
+int sys_wait (tid_t pid)
+{
+    return process_wait(pid);
 }
 
 /* Reads a byte at user virtual address UADDR.UADDR must be below PHYS_BASE.
