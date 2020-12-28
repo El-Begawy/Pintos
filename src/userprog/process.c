@@ -127,9 +127,12 @@ process_wait (tid_t child_tid UNUSED)
 
     if(child->used == 0){
         sema_down(&child->parent_waiting_sema);
-    }
-    child->used = 1;
-    return child->exit_code;
+        child->used = 1;
+        return child->exit_code;
+    }else
+        return -1;
+
+
   /*static int c = 0;
     while (c++ <= 500)
     thread_yield ();*/
