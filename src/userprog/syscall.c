@@ -138,6 +138,11 @@ static int sys_execute (void *esp)
       if (get_user (c) == -1) sys_exit (-1);
       c++;
     }
+  uint32_t len = strlen (buffer);
+  if (len == 0)
+    {
+      return -1;
+    }
   len++;
   char *copy_str = (char *) malloc (len);
   strlcpy (copy_str, buffer, len);
