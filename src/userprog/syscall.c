@@ -25,7 +25,8 @@ static int filesize (int fd);
 static void sys_seek (void *esp);
 static unsigned sys_tell (int fd);
 static struct file_descriptor *find_descriptor_by_fd (int fd);
-void add_file_desc_to_list (struct file_descriptor *file_desc);
+static void add_file_desc_to_list (struct file_descriptor *file_desc);
+static void sys_close (int fd);
 
 struct lock file_lock;
 
@@ -58,7 +59,7 @@ syscall_handler (struct intr_frame *f)
         }
       case SYS_EXEC:
         {
-
+          
           break;
         }
       case SYS_WAIT:
@@ -112,10 +113,28 @@ syscall_handler (struct intr_frame *f)
         }
       case SYS_CLOSE:
         {
-
+          int fd;
+          mem_read ((int *) f->esp + 1, &fd, sizeof (fd));
+          sys_close (fd);
           break;
         }
     }
+}
+
+/* closes a file with fd, and kills the process with -1 on invalid file/stdin/stdout */
+static void sys_close (int fd)
+{
+  lock_acquire (&file_lock);
+  struct file_descriptor *descriptor = find_descriptor_by_fd (fd);
+  if (descriptor == NULL)
+    {
+      lock_release (&file_lock);
+      sys_exit (-1);
+    }
+
+  file_close (descriptor->file);
+  list_remove (&descriptor->fd_elem);
+  lock_release (&file_lock);
 }
 
 /* returns the position of next byte to be read in file*/
@@ -175,13 +194,13 @@ static int open_file (void *esp)
       lock_release (&file_lock);
       return -1;
     }
-  struct file_descriptor *file_desc = palloc_get_page (0);
+  struct file_descriptor *file_desc = (struct file_descriptor *) malloc (sizeof (struct file_descriptor *));
   file_desc->file = file;
   add_file_desc_to_list (file_desc);
   lock_release (&file_lock);
   return file_desc->fd;
 }
-void add_file_desc_to_list (struct file_descriptor *file_desc)
+static void add_file_desc_to_list (struct file_descriptor *file_desc)
 {
   struct thread *t = thread_current ();
   int len = (int) list_size (&t->files_owned);
@@ -190,11 +209,7 @@ void add_file_desc_to_list (struct file_descriptor *file_desc)
       file_desc->fd = 2;
     }
   else
-    {
-      file_desc->fd = list_entry(list_back (&t->files_owned), struct file_descriptor, fd_elem)->fd + 1;
-      //printf ("here: %d\n", file_desc->fd);
-    }
-  //printf ("%d\n", file_desc->fd);
+    file_desc->fd = list_entry(list_back (&t->files_owned), struct file_descriptor, fd_elem)->fd + 1;
   list_push_back (&t->files_owned, &(file_desc->fd_elem));
 }
 /* Creates the file whose name is stored in *esp + 1 after validating it */
@@ -250,9 +265,13 @@ uint32_t read_call (void *esp)
     }
   else
     {
-      struct file_descriptor *descriptor = find_descriptor_by_fd (fd);
-      if (descriptor == NULL) return -1;
       lock_acquire (&file_lock);
+      struct file_descriptor *descriptor = find_descriptor_by_fd (fd);
+      if (descriptor == NULL)
+        {
+          lock_release (&file_lock);
+          return -1;
+        }
       int res = file_read (descriptor->file, buffer, size);
       lock_release (&file_lock);
       return res;
@@ -283,9 +302,13 @@ uint32_t write_call (void *esp)
     }
   else
     {
-      struct file_descriptor *descriptor = find_descriptor_by_fd (fd);
-      if (descriptor == NULL) return 0;
       lock_acquire (&file_lock);
+      struct file_descriptor *descriptor = find_descriptor_by_fd (fd);
+      if (descriptor == NULL)
+        {
+          lock_release (&file_lock);
+          return 0;
+        }
       int res = file_write (descriptor->file, buffer, size);
       lock_release (&file_lock);
       return res;
