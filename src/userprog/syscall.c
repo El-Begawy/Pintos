@@ -10,7 +10,7 @@
 #include <threads/malloc.h>
 #include <filesys/file.h>
 #include <devices/input.h>
-#include <threads/palloc.h>
+#include "process.h"
 
 static void syscall_handler (struct intr_frame *);
 static int get_user (const uint8_t *uaddr);
@@ -27,6 +27,7 @@ static unsigned sys_tell (int fd);
 static struct file_descriptor *find_descriptor_by_fd (int fd);
 static void add_file_desc_to_list (struct file_descriptor *file_desc);
 static void sys_close (int fd);
+static int sys_execute (void *esp);
 
 struct lock file_lock;
 
@@ -59,7 +60,7 @@ syscall_handler (struct intr_frame *f)
         }
       case SYS_EXEC:
         {
-          
+          f->eax = sys_execute (f->esp);
           break;
         }
       case SYS_WAIT:
@@ -119,6 +120,22 @@ syscall_handler (struct intr_frame *f)
           break;
         }
     }
+}
+
+static int sys_execute (void *esp)
+{
+  const char *buffer;
+  mem_read ((int *) esp + 1, &buffer, sizeof (buffer));
+  if (buffer == NULL || get_user ((uint8_t *) buffer) == -1)
+    {
+      sys_exit (-1);
+    }
+  uint32_t len = strlen (buffer);
+  if (len == 0)
+    {
+      return -1;
+    }
+  return process_execute (buffer);
 }
 
 /* closes a file with fd, and kills the process with -1 on invalid file/stdin/stdout */
