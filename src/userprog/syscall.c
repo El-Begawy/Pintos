@@ -166,6 +166,7 @@ static void sys_close (int fd)
 
   file_close (descriptor->file);
   list_remove (&descriptor->fd_elem);
+  free (descriptor);
   lock_release (&file_lock);
 }
 
