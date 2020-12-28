@@ -18,7 +18,6 @@ static bool put_user (uint8_t *udst, uint8_t byte);
 static int mem_read (void *src, void *dist, int size);
 static uint32_t write_call (void *esp);
 static uint32_t read_call (void *esp);
-static void sys_exit (int status);
 static bool create_file (void *esp);
 static int open_file (void *esp);
 static int filesize (int fd);
@@ -68,7 +67,7 @@ syscall_handler (struct intr_frame *f)
         {
           tid_t pid;
           mem_read ((tid_t *) f->esp + 1, &pid, sizeof (pid));
-          f->eax = sys_wait(pid);
+          f->eax = sys_wait (pid);
           break;
         }
       case SYS_CREATE:
@@ -132,6 +131,12 @@ static int sys_execute (void *esp)
   if (buffer == NULL || get_user ((uint8_t *) buffer) == -1)
     {
       sys_exit (-1);
+    }
+  char *c = buffer;
+  while (get_user (c) != '\0')
+    {
+      if (get_user (c) == -1) sys_exit (-1);
+      c++;
     }
   uint32_t len = strlen (buffer);
   if (len == 0)
@@ -352,14 +357,14 @@ void sys_exit (int status)
 {
   struct thread *curr = thread_current ();
   curr->process_control->exit_code = status;
-  sema_up(&curr->process_control->parent_waiting_sema);
+  sema_up (&curr->process_control->parent_waiting_sema);
   printf ("%s: exit(%d)\n", thread_current ()->name, status);
   thread_exit ();
 }
 
 int sys_wait (tid_t pid)
 {
-    return process_wait(pid);
+  return process_wait (pid);
 }
 
 /* Reads a byte at user virtual address UADDR.UADDR must be below PHYS_BASE.
