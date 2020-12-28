@@ -138,6 +138,18 @@ static int sys_execute (void *esp)
       if (get_user (c) == -1) sys_exit (-1);
       c++;
     }
+  len++;
+  char *copy_str = (char *) malloc (len);
+  strlcpy (copy_str, buffer, len);
+  char *save_ptr;
+  char *file_name = strtok_r (copy_str, " ", &save_ptr);
+  struct file *tmp_file;
+  if ((tmp_file = filesys_open (file_name)) == NULL)
+    {
+      free (copy_str);
+      return -1;
+    }
+  file_close (tmp_file);
   return process_execute (buffer);
 }
 
