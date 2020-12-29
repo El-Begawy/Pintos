@@ -130,15 +130,14 @@ process_wait (tid_t child_tid UNUSED)
   if (child == NULL)
     return -1;
 
-  if (child->used == 0)
+  if (child->dead == 0)
     {
       sema_down (&child->parent_waiting_sema);
-      child->used = 1;
-      return child->exit_code;
     }
-  else
-    return -1;
-
+  int exitcode = child->exit_code;
+  list_remove (&child->child_elem);
+  free (child);
+  return exitcode;
 
   /*static int c = 0;
     while (c++ <= 500)
@@ -151,7 +150,6 @@ process_exit (void)
 {
   struct thread *cur = thread_current ();
   uint32_t *pd;
-
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
   pd = cur->pagedir;

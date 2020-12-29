@@ -11,7 +11,8 @@ void process_activate (void);
 struct pcb {
     tid_t pid;
     struct list_elem child_elem;
-    int used;
+    bool dead;
+    bool orphan;
     int exit_code;
     struct semaphore parent_waiting_sema;
 };

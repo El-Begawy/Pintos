@@ -403,19 +403,25 @@ static void clean_children (struct list *children)
     {
       struct list_elem *e = list_pop_back (children);
       struct pcb *process_control = list_entry(e, struct pcb, child_elem);
-      free (process_control);
+      if (process_control->dead)
+        free (process_control);
+      else
+        process_control->orphan = 1;
     }
 }
 
 void sys_exit (int status)
 {
   struct thread *curr = thread_current ();
+  printf ("%s: exit(%d)\n", thread_current ()->name, status);
   curr->process_control->exit_code = status;
   sema_up (&curr->process_control->parent_waiting_sema);
   close_all_files (&curr->files_owned);
   clean_children (&curr->child_list);
-  printf ("%s: exit(%d)\n", thread_current ()->name, status);
-  process_exit ();
+  if (curr->process_control->orphan)
+    free(curr->process_control);
+  else
+    curr->process_control->dead = 1;
   thread_exit ();
 }
 
