@@ -181,15 +181,50 @@ thread_create (const char *name, int priority,
   init_thread (t, name, priority);
   tid = t->tid = allocate_tid ();
 
-  //initialize process pcb and add it to parent
-  t->process_control = malloc (sizeof (struct pcb));
-  t->process_control->dead = 0;
-  t->process_control->orphan = 0;
-  sema_init (&t->process_control->parent_waiting_sema, 0);
-  if (t->parent != NULL)
-    list_push_front (&t->parent->child_list, &t->process_control->child_elem);
-  t->process_control->pid = t->tid;
 
+  /* Stack frame for kernel_thread(). */
+  kf = alloc_frame (t, sizeof *kf);
+  kf->eip = NULL;
+  kf->function = function;
+  kf->aux = aux;
+
+  /* Stack frame for switch_entry(). */
+  ef = alloc_frame (t, sizeof *ef);
+  ef->eip = (void (*) (void)) kernel_thread;
+
+  /* Stack frame for switch_threads(). */
+  sf = alloc_frame (t, sizeof *sf);
+  sf->eip = switch_entry;
+  sf->ebp = 0;
+
+  /* Add to run queue. */
+  thread_unblock (t);
+
+  return tid;
+}
+
+tid_t
+thread_create_pcb (const char *name, int priority,
+               thread_func *function, void *aux, struct pcb* process_control)
+{
+  struct thread *t;
+  struct kernel_thread_frame *kf;
+  struct switch_entry_frame *ef;
+  struct switch_threads_frame *sf;
+  tid_t tid;
+
+  ASSERT (function != NULL);
+
+  /* Allocate thread. */
+  t = palloc_get_page (PAL_ZERO);
+  if (t == NULL)
+    return TID_ERROR;
+
+  /* Initialize thread. */
+  // printf("Here: %x", process_control);
+  init_thread (t, name, priority);
+  t->process_control = process_control;
+  tid = t->tid = allocate_tid ();
 
 
   /* Stack frame for kernel_thread(). */

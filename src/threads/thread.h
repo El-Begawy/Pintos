@@ -85,8 +85,7 @@ struct list all_list;
    only because they are mutually exclusive: only a thread in the
    ready state is on the run queue, whereas only a thread in the
    blocked state is on a semaphore wait list. */
-struct thread
-  {
+struct thread {
     /* Owned by thread.c. */
     tid_t tid;                          /* Thread identifier. */
     enum thread_status status;          /* Thread state. */
@@ -104,14 +103,14 @@ struct thread
 #endif
 
     //added for userprog
-    struct thread* parent;
+    struct thread *parent;
     struct semaphore child_sema;
-    struct pcb* process_control;
+    struct pcb *process_control;
     struct list child_list;     /*list of pcb*/
 
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
-  };
+};
 
 /* If false (default), use round-robin scheduler.
    If true, use multi-level feedback queue scheduler.
@@ -126,6 +125,7 @@ void thread_print_stats (void);
 
 typedef void thread_func (void *aux);
 tid_t thread_create (const char *name, int priority, thread_func *, void *);
+tid_t thread_create_pcb (const char *name, int priority, thread_func *, void *, struct pcb *);
 
 void thread_block (void);
 void thread_unblock (struct thread *);

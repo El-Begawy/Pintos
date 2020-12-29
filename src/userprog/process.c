@@ -18,6 +18,7 @@
 #include "threads/palloc.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+#include "syscall.h"
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
@@ -49,16 +50,40 @@ process_execute (const char *argv)
     }
   strlcpy (fn_copy, argv, PGSIZE);
 
+  struct pcb *process_control = malloc (sizeof (struct pcb));
+  if (process_control == NULL)
+    {
+      free (copy_str);
+      palloc_free_page (fn_copy);
+      return -1;
+    }
+  process_control->dead = 0;
+  process_control->orphan = 0;
+  process_control->exit_code = -1;
+  sema_init (&process_control->parent_waiting_sema, 0);
   /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
+  tid = thread_create_pcb (file_name, PRI_DEFAULT, start_process, fn_copy, process_control);
+
   free (copy_str);
   if (tid == TID_ERROR)
-    palloc_free_page (fn_copy);
+    {
+      palloc_free_page (fn_copy);
+      free (process_control);
+      return -1;
+    }
 
   //wait for child initialization
   sema_down (&thread_current ()->child_sema);
-
-  return tid;
+  if (process_control->pid >= 0)
+    {
+      list_push_front (&thread_current ()->child_list, &process_control->child_elem);
+      return process_control->pid;
+    }
+  else
+    {
+      free (process_control);
+      return -1;
+    }
 }
 
 /* A thread function that loads a user process and starts it
@@ -81,12 +106,15 @@ start_process (void *file_name_)
   palloc_free_page (file_name);
   if (!success)
     {
+      thread_current ()->process_control->pid = -1;
       sema_up (&thread_current ()->parent->child_sema);
-      thread_exit ();
+      sys_exit (-1);
     }
   else
-    sema_up (&thread_current ()->parent->child_sema);
-
+    {
+      thread_current ()->process_control->pid = thread_current ()->tid;
+      sema_up (&thread_current ()->parent->child_sema);
+    }
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
@@ -119,6 +147,7 @@ process_wait (tid_t child_tid UNUSED)
   struct list_elem *e;
 
   //check if there exist a child with the given tid
+
 
   for (e = list_begin (&curr->child_list); e != list_end (&curr->child_list);
        e = list_next (e))
@@ -552,7 +581,8 @@ void write_arguments_to_stack (void **esp, const char *argv)
   *((uintptr_t *) (*esp)) = temp_sz;
   (*esp) -= 4;
   *((uintptr_t *) (*esp)) = 0;
-  free (argument_list[0]);
+  for (int i = 0; i < sz; i++)
+    free(argument_list[i]);
   free (argument_list);
   if (DEBUG_STACK)
     {
