@@ -415,6 +415,7 @@ void sys_exit (int status)
   close_all_files (&curr->files_owned);
   clean_children (&curr->child_list);
   printf ("%s: exit(%d)\n", thread_current ()->name, status);
+  process_exit ();
   thread_exit ();
 }
 
