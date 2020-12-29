@@ -19,6 +19,7 @@ static int mem_read (void *src, void *dist, int size);
 static uint32_t write_call (void *esp);
 static uint32_t read_call (void *esp);
 static bool create_file (void *esp);
+static bool remove_file (void *esp);
 static int open_file (void *esp);
 static int filesize (int fd);
 static void sys_seek (void *esp);
@@ -77,7 +78,8 @@ syscall_handler (struct intr_frame *f)
         }
       case SYS_REMOVE:
         {
-
+          //
+          f->eax = remove_file (f->esp);
           break;
         }
       case SYS_OPEN:
@@ -226,15 +228,26 @@ static int open_file (void *esp)
       return -1;
     }
   lock_acquire (&file_lock);
-  struct file *file = filesys_open (buffer);
-  if (file == NULL)
+  struct file *tmp_file = filesys_open (buffer);
+  if (tmp_file == NULL)
     {
       lock_release (&file_lock);
       return -1;
     }
   struct file_descriptor *file_desc = (struct file_descriptor *) malloc (sizeof (struct file_descriptor *));
-  file_desc->file = file;
+  file_desc->file = tmp_file;
   add_file_desc_to_list (file_desc);
+  struct list_elem *e;
+  for (e = list_begin (&all_list); e != list_end (&all_list); e = list_next (e))
+    {
+      struct thread *t = list_entry(e, struct thread, allelem);
+      // Are equal
+      if (strcmp (t->name, buffer) == 0)
+        {
+          file_deny_write (tmp_file);
+          break;
+        }
+    }
   lock_release (&file_lock);
   return file_desc->fd;
 }
@@ -250,6 +263,26 @@ static void add_file_desc_to_list (struct file_descriptor *file_desc)
     file_desc->fd = list_entry(list_back (&t->files_owned), struct file_descriptor, fd_elem)->fd + 1;
   list_push_back (&t->files_owned, &(file_desc->fd_elem));
 }
+/* Remove the file whose name is stored in *esp + 1 after validating it */
+static bool remove_file (void *esp)
+{
+  const char *buffer;
+  mem_read ((int *) esp + 1, &buffer, sizeof (buffer));
+  if (buffer == NULL || get_user ((uint8_t *) buffer) == -1)
+    {
+      sys_exit (-1);
+    }
+  uint32_t len = strlen (buffer);
+  if (len == 0)
+    {
+      return false;
+    }
+  lock_acquire (&file_lock);
+  bool result = filesys_remove (buffer);
+  lock_release (&file_lock);
+  return result;
+}
+
 /* Creates the file whose name is stored in *esp + 1 after validating it */
 static bool create_file (void *esp)
 {
@@ -352,12 +385,35 @@ uint32_t write_call (void *esp)
       return res;
     }
 }
+static void close_all_files (struct list *files)
+{
+  while (!list_empty (files))
+    {
+      struct list_elem *e = list_pop_back (files);
+      struct file_descriptor *fd = list_entry(e, struct file_descriptor, fd_elem);
+      file_close (fd->file);
+      free (fd);
+    }
+}
+
+static void clean_children (struct list *children)
+{
+  int sz = list_size (children);
+  while (sz--)
+    {
+      struct list_elem *e = list_pop_back (children);
+      struct pcb *process_control = list_entry(e, struct pcb, child_elem);
+      free (process_control);
+    }
+}
 
 void sys_exit (int status)
 {
   struct thread *curr = thread_current ();
   curr->process_control->exit_code = status;
   sema_up (&curr->process_control->parent_waiting_sema);
+  close_all_files (&curr->files_owned);
+  clean_children (&curr->child_list);
   printf ("%s: exit(%d)\n", thread_current ()->name, status);
   thread_exit ();
 }

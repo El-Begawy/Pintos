@@ -22,7 +22,6 @@
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
 
-
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
    before process_execute() returns.  Returns the new process's
@@ -44,7 +43,10 @@ process_execute (const char *argv)
      Otherwise there's a race between the caller and load(). */
   fn_copy = palloc_get_page (0);
   if (fn_copy == NULL)
-    return TID_ERROR;
+    {
+      free (copy_str);
+      return TID_ERROR;
+    }
   strlcpy (fn_copy, argv, PGSIZE);
 
   /* Create a new thread to execute FILE_NAME. */
@@ -54,7 +56,7 @@ process_execute (const char *argv)
     palloc_free_page (fn_copy);
 
   //wait for child initialization
-  sema_down(&thread_current()->child_sema);
+  sema_down (&thread_current ()->child_sema);
 
   return tid;
 }
@@ -77,11 +79,13 @@ start_process (void *file_name_)
 
   /* If load failed, quit. */
   palloc_free_page (file_name);
-  if (!success){
-      sema_up(&thread_current()->parent->child_sema);
+  if (!success)
+    {
+      sema_up (&thread_current ()->parent->child_sema);
       thread_exit ();
-  }else
-      sema_up(&thread_current()->parent->child_sema);
+    }
+  else
+    sema_up (&thread_current ()->parent->child_sema);
 
 
   /* Start the user process by simulating a return from an
@@ -106,31 +110,34 @@ start_process (void *file_name_)
 int
 process_wait (tid_t child_tid UNUSED)
 {
-    if(list_empty(&thread_current()->child_list))
+  if (list_empty (&thread_current ()->child_list))
     {
-        return -1;
+      return -1;
     }
-    struct thread *curr = thread_current ();
-    struct pcb *child = NULL;
-    struct list_elem *e;
+  struct thread *curr = thread_current ();
+  struct pcb *child = NULL;
+  struct list_elem *e;
 
-    //check if there exist a child with the given tid
+  //check if there exist a child with the given tid
 
-    for (e = list_begin (&curr->child_list); e != list_end (&curr->child_list);
-         e = list_next (e)){
-        struct pcb *cp = list_entry (e, struct pcb, child_elem);
-        if(cp->pid == child_tid)
-            child = cp;
+  for (e = list_begin (&curr->child_list); e != list_end (&curr->child_list);
+       e = list_next (e))
+    {
+      struct pcb *cp = list_entry (e, struct pcb, child_elem);
+      if (cp->pid == child_tid)
+        child = cp;
     }
-    if(child == NULL)
-        return -1;
+  if (child == NULL)
+    return -1;
 
-    if(child->used == 0){
-        sema_down(&child->parent_waiting_sema);
-        child->used = 1;
-        return child->exit_code;
-    }else
-        return -1;
+  if (child->used == 0)
+    {
+      sema_down (&child->parent_waiting_sema);
+      child->used = 1;
+      return child->exit_code;
+    }
+  else
+    return -1;
 
 
   /*static int c = 0;
@@ -521,7 +528,7 @@ void write_arguments_to_stack (void **esp, const char *argv)
   char **argument_list;
   int sz;
   parse_arguments (argv, &argument_list, &sz);
-  uintptr_t *stk_address = (uintptr_t *) malloc (sizeof (uintptr_t *) * sz);
+  uintptr_t stk_address[sz];
   ASSERT(sz > 0);
   ASSERT(stk_address != NULL);
   int temp_sz = sz;
@@ -548,7 +555,6 @@ void write_arguments_to_stack (void **esp, const char *argv)
   (*esp) -= 4;
   *((uintptr_t *) (*esp)) = 0;
   free (argument_list[0]);
-  free (stk_address);
   free (argument_list);
   if (DEBUG_STACK)
     {
