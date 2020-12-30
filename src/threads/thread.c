@@ -91,6 +91,7 @@ thread_init (void)
   list_init (&ready_list);
   list_init (&all_list);
   list_init (&pcb_list);
+  lock_init (&pcb_list_lock);
   /* Set up a thread structure for the running thread. */
   initial_thread = running_thread ();
   init_thread (initial_thread, "main", PRI_DEFAULT);
@@ -201,9 +202,15 @@ thread_create (const char *name, int priority,
     printf ("thread_create: sixth quarter\n");
   sema_init (&process_control->parent_waiting_sema, 0);
   if (t->parent != NULL)
-    list_push_front (&t->parent->child_list, &process_control->child_elem);
+    {
+      list_push_front (&t->parent->child_list, &process_control->child_elem);
+      t->depth = t->parent->depth + 1;
+    }
+  else t->depth = 0;
   process_control->pid = t->tid;
+  lock_acquire (&pcb_list_lock);
   list_push_back (&pcb_list, &process_control->all_pcb_elem);
+  lock_release (&pcb_list_lock);
 
 
   /* Stack frame for kernel_thread(). */

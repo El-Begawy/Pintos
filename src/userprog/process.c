@@ -21,10 +21,7 @@
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
-struct waiting_struct {
-    struct semaphore *tmp_sema;
-    char *fn_copy;
-};
+
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
    before process_execute() returns.  Returns the new process's
@@ -33,17 +30,16 @@ tid_t
 process_execute (const char *argv)
 {
   unsigned int len = strlen (argv) + 1;
-  char *copy_str = palloc_get_page (0);
-  if (copy_str == NULL)
-    return -1;
+  char *copy_str = (char *) malloc (sizeof (char) * len);
+  ASSERT(copy_str != NULL);
   strlcpy (copy_str, argv, len);
   char *save_ptr;
   char *file_name = strtok_r (copy_str, " ", &save_ptr);
   ASSERT(file_name != NULL);
   char *fn_copy;
   tid_t tid;
-  //if (DEBUG_MODE)
-  printf ("process_execute: in the first quarter\n");
+  if (DEBUG_MODE)
+    printf ("%d reached here\n", thread_current ()->tid);
   /* Make a copy of FILE_NAME.
      Otherwise there's a race between the caller and load(). */
   fn_copy = palloc_get_page (0);
@@ -55,36 +51,26 @@ process_execute (const char *argv)
   strlcpy (fn_copy, argv, PGSIZE);
 
   /* Create a new thread to execute FILE_NAME. */
-  // if (DEBUG_MODE)
-  printf ("process_execute: in the second quarter\n");
-  struct semaphore tmp_sema;
-  sema_init (&tmp_sema, 0);
-  struct waiting_struct *tmp_struct = palloc_get_page (0);
-  if (tmp_struct == NULL)
-    {
-      palloc_free_page (fn_copy);
-      return -1;
-    }
-  tmp_struct->tmp_sema = &tmp_sema;
-  tmp_struct->fn_copy = fn_copy;
-  tid = thread_create (file_name, PRI_DEFAULT, start_process, tmp_struct);
-  sema_down (&tmp_sema);
-  palloc_free_page (tmp_struct);
-  //if (DEBUG_MODE)
-  printf ("process_execute: created thread\n");
-  palloc_free_page (copy_str);
+  tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
+  free (copy_str);
   if (tid == TID_ERROR)
     {
       palloc_free_page (fn_copy);
-      return tid;
+      return TID_ERROR;
     }
+
   if (DEBUG_MODE)
-    printf ("%s = %d\n", argv, tid);
+    printf ("Created thread successfully! = %d\n", tid);
+  //wait for child initialization
+  sema_down (&thread_current ()->child_sema);
+  if (DEBUG_MODE)
+    printf ("%d , %s = %d\n", thread_current ()->tid, argv, tid);
   if (DEBUG_MODE)
     printf ("old tid = %d\n", tid);
   if (find_pcb_by_tid (tid) == NULL)
     {
       tid = TID_ERROR;
+
     }
   if (DEBUG_MODE)
     printf ("new tid = %d\n", tid);
@@ -94,10 +80,10 @@ process_execute (const char *argv)
 /* A thread function that loads a user process and starts it
    running. */
 static void
-start_process (void *arg)
+start_process (void *file_name_)
 {
-  struct waiting_struct *tmp_waiting = (struct waiting_struct *) arg;
-  char *file_name = tmp_waiting->fn_copy;
+
+  char *file_name = file_name_;
   struct intr_frame if_;
   bool success;
 
@@ -107,22 +93,20 @@ start_process (void *arg)
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
   success = load (file_name, &if_.eip, &if_.esp);
-
+  printf ("thread creation success =%d\n", success);
   /* If load failed, quit. */
   palloc_free_page (file_name);
-  enum intr_level old_level = intr_disable ();
-  struct thread *t = thread_current ();
-  intr_set_level (old_level);
-  if (!success)
+  if (!success || thread_current ()->depth >= 37)
     {
-      struct pcb *cur_pcb = find_pcb_by_tid (t->tid);
+      printf ("Thread reached here\n");
+      struct pcb *cur_pcb = find_pcb_by_tid (thread_current ()->tid);
       cur_pcb->pid = -1;
-      t->tid = -1;
-      sema_up (tmp_waiting->tmp_sema);
+      thread_current ()->tid = -1;
+      sema_up (&thread_current ()->parent->child_sema);
       sys_exit (-1);
     }
   else
-    sema_up (tmp_waiting->tmp_sema);
+    sema_up (&thread_current ()->parent->child_sema);
 
 
   /* Start the user process by simulating a return from an
