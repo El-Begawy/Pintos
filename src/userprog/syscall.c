@@ -147,7 +147,8 @@ static int sys_execute (void *esp)
       return -1;
     }
   len++;
-  printf ("%d reached execute2\n", thread_current ()->tid);
+  if (DEBUG_MODE)
+    printf ("%d reached execute2\n", thread_current ()->tid);
   char *copy_str = (char *) malloc (sizeof (char) * len);
   if (copy_str == NULL)
     return -1;
@@ -258,7 +259,7 @@ static int open_file (void *esp)
   ASSERT(file_desc != NULL);
   file_desc->file = tmp_file;
   add_file_desc_to_list (file_desc);
-  /*struct list_elem *e;
+  struct list_elem *e;
   for (e = list_begin (&all_list); e != list_end (&all_list); e = list_next (e))
     {
       struct thread *t = list_entry(e, struct thread, allelem);
@@ -268,7 +269,7 @@ static int open_file (void *esp)
           file_deny_write (tmp_file);
           break;
         }
-    }*/
+    }
   lock_release (&file_lock);
   return file_desc->fd;
 }
@@ -427,27 +428,11 @@ static void clean_children (struct list *children)
       free (process_control);
     }
 }
-struct pcb *find_pcb_by_tid (tid_t tid)
-{
-  lock_acquire (&pcb_list_lock);
-  struct list_elem *e;
-  for (e = list_begin (&pcb_list); e != list_end (&pcb_list); e = list_next (e))
-    {
-      struct pcb *cur_pcb = list_entry(e, struct pcb, all_pcb_elem);
-      if (tid == cur_pcb->pid)
-        {
-          lock_release (&pcb_list_lock);
-          return cur_pcb;
-        }
-    }
-  lock_release (&pcb_list_lock);
-  return NULL;
-}
 void sys_exit (int status)
 {
   struct thread *curr = thread_current ();
   printf ("%s: exit(%d)\n", curr->name, status);
-  struct pcb *process_control = find_pcb_by_tid (curr->tid);
+  struct pcb *process_control = curr->process_control;
   process_control->exit_code = status;
   sema_up (&process_control->parent_waiting_sema);
   close_all_files (&curr->files_owned);

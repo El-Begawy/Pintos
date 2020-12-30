@@ -31,82 +31,92 @@ process_execute (const char *argv)
 {
   unsigned int len = strlen (argv) + 1;
   char *copy_str = (char *) malloc (sizeof (char) * len);
-  ASSERT(copy_str != NULL);
+  if (copy_str == NULL)
+    return -1;
   strlcpy (copy_str, argv, len);
   char *save_ptr;
   char *file_name = strtok_r (copy_str, " ", &save_ptr);
   ASSERT(file_name != NULL);
-  char *fn_copy;
+  struct pcb *cur_pcb = malloc (sizeof (struct pcb));
+  if (cur_pcb == NULL)
+    {
+      free (copy_str);
+      return -1;
+    }
   tid_t tid;
   if (DEBUG_MODE)
     printf ("%d reached here\n", thread_current ()->tid);
   /* Make a copy of FILE_NAME.
      Otherwise there's a race between the caller and load(). */
-  fn_copy = palloc_get_page (0);
-  if (fn_copy == NULL)
+  cur_pcb->fn_copy = palloc_get_page (0);
+  if (cur_pcb->fn_copy == NULL)
     {
       free (copy_str);
+      free (cur_pcb);
       return TID_ERROR;
     }
-  strlcpy (fn_copy, argv, PGSIZE);
-
+  strlcpy (cur_pcb->fn_copy, argv, PGSIZE);
+  cur_pcb->used = 0;
+  sema_init (&cur_pcb->child_sema, 0);
+  sema_init (&cur_pcb->parent_waiting_sema, 0);
+  if (thread_current ()->process_control != NULL)
+    cur_pcb->depth = thread_current ()->process_control->depth + 1;
+  else cur_pcb->depth = 0;
+  list_push_front (&thread_current ()->child_list, &cur_pcb->child_elem);
   /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
+  tid = thread_create (file_name, PRI_DEFAULT, start_process, cur_pcb);
+  cur_pcb->pid = tid;
   free (copy_str);
   if (tid == TID_ERROR)
     {
-      palloc_free_page (fn_copy);
+      palloc_free_page (cur_pcb->fn_copy);
+      free (cur_pcb);
       return TID_ERROR;
     }
 
   if (DEBUG_MODE)
     printf ("Created thread successfully! = %d\n", tid);
   //wait for child initialization
-  sema_down (&thread_current ()->child_sema);
+  sema_down (&cur_pcb->child_sema);
   if (DEBUG_MODE)
     printf ("%d , %s = %d\n", thread_current ()->tid, argv, tid);
   if (DEBUG_MODE)
     printf ("old tid = %d\n", tid);
-  if (find_pcb_by_tid (tid) == NULL)
-    {
-      tid = TID_ERROR;
-
-    }
   if (DEBUG_MODE)
     printf ("new tid = %d\n", tid);
-  return tid;
+  return cur_pcb->pid;
 }
 
 /* A thread function that loads a user process and starts it
    running. */
 static void
-start_process (void *file_name_)
+start_process (void *argv)
 {
-
-  char *file_name = file_name_;
+  char *fn_copy = ((struct pcb *) argv)->fn_copy;
+  char *file_name = fn_copy;
   struct intr_frame if_;
   bool success;
-
+  thread_current ()->process_control = (struct pcb *) argv;
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
   if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
   success = load (file_name, &if_.eip, &if_.esp);
-  printf ("thread creation success =%d\n", success);
+  if (DEBUG_MODE)
+    printf ("thread creation success =%d\n", success);
   /* If load failed, quit. */
   palloc_free_page (file_name);
-  if (!success || thread_current ()->depth >= 37)
+  if (!success)
     {
-      printf ("Thread reached here\n");
-      struct pcb *cur_pcb = find_pcb_by_tid (thread_current ()->tid);
-      cur_pcb->pid = -1;
-      thread_current ()->tid = -1;
-      sema_up (&thread_current ()->parent->child_sema);
+      if (DEBUG_MODE)
+        printf ("Thread reached here\n");
+      thread_current ()->process_control->pid = -1;
+      sema_up (&thread_current ()->process_control->child_sema);
       sys_exit (-1);
     }
   else
-    sema_up (&thread_current ()->parent->child_sema);
+    sema_up (&thread_current ()->process_control->child_sema);
 
 
   /* Start the user process by simulating a return from an

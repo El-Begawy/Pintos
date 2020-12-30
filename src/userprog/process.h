@@ -16,6 +16,8 @@ struct pcb {
     bool used;
     int exit_code;
     struct semaphore parent_waiting_sema;
+    struct semaphore child_sema;
+    char *fn_copy;
+    int depth;
 };
-
 #endif /* userprog/process.h */
