@@ -286,12 +286,104 @@ struct Elf32_Phdr {
 #define PF_W 2          /* Writable. */
 #define PF_R 4          /* Readable. */
 
-static bool setup_stack (void **esp, const char *argv);
+static bool setup_stack (void **esp);
 static bool validate_segment (const struct Elf32_Phdr *, struct file *);
 static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
                           uint32_t read_bytes, uint32_t zero_bytes,
                           bool writable);
+int count_arguments (const char *argv)
+{
+  unsigned int len = strlen (argv) + 1;
+  char *copy_str = (char *) malloc (len);
+  if (copy_str == NULL)
+    return -1;
+  strlcpy (copy_str, argv, len);
+  char *token, *save_ptr;
+  int sz = 0;
+  if (DEBUG_STACK)
+    {
+      printf ("args = %s\n", argv);
+    }
+  for (token = strtok_r (copy_str, " ", &save_ptr); token != NULL;
+       token = strtok_r (NULL, " ", &save_ptr))
+    sz++;
 
+  free (copy_str);
+  return sz;
+}
+bool parse_arguments (const char *argv, char ***argument_list, int *sz)
+{
+  (*sz) = count_arguments (argv);
+  if (*sz == -1)
+    return false;
+  (*argument_list) = (char **) malloc (sizeof (char **) * (*sz));
+  if (argument_list == NULL)
+    return false;
+  int counter = 0;
+  unsigned int len = strlen (argv) + 1;
+  char *copy_str = (char *) malloc (len);
+  if (copy_str == NULL)
+    {
+      free (*argument_list);
+      return false;
+    }
+  strlcpy (copy_str, argv, len);
+  char *token, *save_ptr;
+  for (token = strtok_r (copy_str, " ", &save_ptr); token != NULL;
+       token = strtok_r (NULL, " ", &save_ptr))
+    {
+      (*argument_list)[counter] = token;
+      counter++;
+    }
+  return true;
+}
+/* Handles the writing of the program argument into the stack */
+bool write_arguments_to_stack (void **esp, const char *argv)
+{
+  char **argument_list;
+  int sz;
+
+  if (!parse_arguments (argv, &argument_list, &sz))
+    return false;
+  uintptr_t stk_address[sz];
+  int temp_sz = sz;
+  for (sz--; sz >= 0; sz--)
+    {
+      //printf ("Writing %s starting at %x\n", argument_list[sz], *(esp));
+      unsigned int len = strlen (argument_list[sz]) + 1;
+      (*esp) -= len;
+      stk_address[sz] = (uintptr_t) &(*(*esp));
+      memcpy ((*esp), argument_list[sz], len);
+    }
+  uintptr_t num_of_filler_bytes = ((uintptr_t) (&*(*esp)) % 4) + 4; // shouldn't it be 4 - the mod?
+  (*esp) -= num_of_filler_bytes;
+  memset ((*esp), 0, num_of_filler_bytes);
+  sz = temp_sz;
+  for (sz--; sz >= 0; sz--)
+    {
+      (*esp) -= 4;
+      *((uintptr_t *) (*esp)) = stk_address[sz];
+    }
+  (*esp) -= 4;
+  *((uintptr_t *) (*esp)) = ((uintptr_t) &**esp + 4);
+  (*esp) -= 4;
+  *((uintptr_t *) (*esp)) = temp_sz;
+  (*esp) -= 4;
+  *((uintptr_t *) (*esp)) = 0;
+  free (argument_list[0]);
+  free (argument_list);
+  if (DEBUG_STACK)
+    {
+      char data_saved[1024];
+      int counter = 0;
+      for (; (*esp) + counter < PHYS_BASE; counter++)
+        {
+          data_saved[counter] = *((char *) (*esp + counter));
+        }
+      hex_dump (&**esp, data_saved, counter, true);
+    }
+  return true;
+}
 /* Loads an ELF executable from FILE_NAME into the current thread.
    Stores the executable's entry point into *EIP
    and its initial stack pointer into *ESP.
@@ -314,7 +406,7 @@ load (const char *file_name_, void (**eip) (void), void **esp)
   ASSERT(file_name_ != NULL)
   unsigned int len = strlen (file_name_) + 1;
 
-  char *copy_str = palloc_get_page (0);
+  char *copy_str = malloc (sizeof (char) * len);
   if (copy_str == NULL)
     return false;
   strlcpy (copy_str, file_name_, len);
@@ -402,9 +494,11 @@ load (const char *file_name_, void (**eip) (void), void **esp)
         }
     }
   /* Set up stack. */
-  if (!setup_stack (esp, file_name_))
+  if (!setup_stack (esp))
     goto done;
 
+  if (!write_arguments_to_stack (esp, file_name_))
+    goto done;
   /* Start address. */
   *eip = (void (*) (void)) ehdr.e_entry;
 
@@ -414,7 +508,7 @@ load (const char *file_name_, void (**eip) (void), void **esp)
   //if (DEBUG_MODE)
   //printf ("Success =%d\n", success);
   file_close (file);
-  palloc_free_page (copy_str);
+  free (copy_str);
   return success;
 }
 
@@ -526,122 +620,24 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
   return true;
 }
 
-int count_arguments (const char *argv)
-{
-  unsigned int len = strlen (argv) + 1;
-  char *copy_str = (char *) malloc (len);
-  if (copy_str == NULL)
-    return -1;
-  strlcpy (copy_str, argv, len);
-  char *token, *save_ptr;
-  int sz = 0;
-  if (DEBUG_STACK)
-    {
-      printf ("args = %s\n", argv);
-    }
-  for (token = strtok_r (copy_str, " ", &save_ptr); token != NULL;
-       token = strtok_r (NULL, " ", &save_ptr))
-    sz++;
-
-  free (copy_str);
-  return sz;
-}
-bool parse_arguments (const char *argv, char ***argument_list, int *sz)
-{
-  (*sz) = count_arguments (argv);
-  if (*sz == -1)
-    return false;
-  (*argument_list) = (char **) malloc (sizeof (char **) * (*sz));
-  if (argument_list == NULL)
-    return false;
-  int counter = 0;
-  unsigned int len = strlen (argv) + 1;
-  char *copy_str = (char *) malloc (len);
-  if (copy_str == NULL)
-    {
-      free (*argument_list);
-      return false;
-    }
-  strlcpy (copy_str, argv, len);
-  char *token, *save_ptr;
-  for (token = strtok_r (copy_str, " ", &save_ptr); token != NULL;
-       token = strtok_r (NULL, " ", &save_ptr))
-    {
-      (*argument_list)[counter] = token;
-      counter++;
-    }
-  return true;
-}
-/* Handles the writing of the program argument into the stack */
-bool write_arguments_to_stack (void **esp, const char *argv)
-{
-  char **argument_list;
-  int sz;
-
-  if (!parse_arguments (argv, &argument_list, &sz))
-    return false;
-  uintptr_t stk_address[sz];
-  int temp_sz = sz;
-  for (sz--; sz >= 0; sz--)
-    {
-      //printf ("Writing %s starting at %x\n", argument_list[sz], *(esp));
-      unsigned int len = strlen (argument_list[sz]) + 1;
-      (*esp) -= len;
-      stk_address[sz] = (uintptr_t) &(*(*esp));
-      memcpy ((*esp), argument_list[sz], len);
-    }
-  uintptr_t num_of_filler_bytes = ((uintptr_t) (&*(*esp)) % 4) + 4; // shouldn't it be 4 - the mod?
-  (*esp) -= num_of_filler_bytes;
-  memset ((*esp), 0, num_of_filler_bytes);
-  sz = temp_sz;
-  for (sz--; sz >= 0; sz--)
-    {
-      (*esp) -= 4;
-      *((uintptr_t *) (*esp)) = stk_address[sz];
-    }
-  (*esp) -= 4;
-  *((uintptr_t *) (*esp)) = ((uintptr_t) &**esp + 4);
-  (*esp) -= 4;
-  *((uintptr_t *) (*esp)) = temp_sz;
-  (*esp) -= 4;
-  *((uintptr_t *) (*esp)) = 0;
-  free (argument_list[0]);
-  free (argument_list);
-  if (DEBUG_STACK)
-    {
-      char data_saved[1024];
-      int counter = 0;
-      for (; (*esp) + counter < PHYS_BASE; counter++)
-        {
-          data_saved[counter] = *((char *) (*esp + counter));
-        }
-      hex_dump (&**esp, data_saved, counter, true);
-    }
-  return true;
-}
 /* Create a minimal stack by mapping a zeroed page at the top of
    user virtual memory. */
 static bool
-setup_stack (void **esp, const char *argv)
+setup_stack (void **esp)
 {
   uint8_t *kpage;
   bool success = false;
-  if (DEBUG_STACK)
-    printf ("Inside stack\n");
+
   kpage = palloc_get_page (PAL_USER | PAL_ZERO);
   if (kpage != NULL)
     {
       success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
       if (success)
-        {
-          *esp = PHYS_BASE;
-          return write_arguments_to_stack (esp, argv);
-        }
+        *esp = PHYS_BASE;
       else
-
         palloc_free_page (kpage);
-      return false;
     }
+  return success;
 }
 
 /* Adds a mapping from user virtual address UPAGE to kernel
