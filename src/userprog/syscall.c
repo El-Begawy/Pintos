@@ -56,6 +56,7 @@ syscall_handler (struct intr_frame *f)
         { // TODO EDIT THIS!! wake up parent.. do what needs to be done.. return status.
           int status;
           mem_read ((int *) f->esp + 1, &status, sizeof (status));
+          // printf("Exiting with status %d\n", status);
           sys_exit (status);
           break;
         }
@@ -147,17 +148,24 @@ static int sys_execute (void *esp)
     }
   len++;
   char *copy_str = (char *) malloc (len);
+  if (copy_str == NULL)
+    return -1;
   strlcpy (copy_str, buffer, len);
   char *save_ptr;
   char *file_name = strtok_r (copy_str, " ", &save_ptr);
   struct file *tmp_file;
+  lock_acquire (&file_lock);
   if ((tmp_file = filesys_open (file_name)) == NULL)
     {
       free (copy_str);
+      lock_release (&file_lock);
       return -1;
     }
   file_close (tmp_file);
-  return process_execute (buffer);
+  free (copy_str);
+  int ret = process_execute (buffer);
+  lock_release (&file_lock);
+  return ret;
 }
 
 /* closes a file with fd, and kills the process with -1 on invalid file/stdin/stdout */
@@ -234,10 +242,11 @@ static int open_file (void *esp)
       lock_release (&file_lock);
       return -1;
     }
-  struct file_descriptor *file_desc = (struct file_descriptor *) malloc (sizeof (struct file_descriptor *));
+  struct file_descriptor *file_desc = (struct file_descriptor *) malloc (sizeof (struct file_descriptor));
+  ASSERT(file_desc != NULL);
   file_desc->file = tmp_file;
   add_file_desc_to_list (file_desc);
-  struct list_elem *e;
+  /*struct list_elem *e;
   for (e = list_begin (&all_list); e != list_end (&all_list); e = list_next (e))
     {
       struct thread *t = list_entry(e, struct thread, allelem);
@@ -247,7 +256,7 @@ static int open_file (void *esp)
           file_deny_write (tmp_file);
           break;
         }
-    }
+    }*/
   lock_release (&file_lock);
   return file_desc->fd;
 }
@@ -403,25 +412,29 @@ static void clean_children (struct list *children)
     {
       struct list_elem *e = list_pop_back (children);
       struct pcb *process_control = list_entry(e, struct pcb, child_elem);
-      if (process_control->dead)
-        free (process_control);
-      else
-        process_control->orphan = 1;
+      free (process_control);
     }
 }
-
+struct pcb *find_pcb_by_tid (tid_t tid)
+{
+  struct list_elem *e;
+  for (e = list_begin (&pcb_list); e != list_end (&pcb_list); e = list_next (e))
+    {
+      struct pcb *cur_pcb = list_entry(e, struct pcb, all_pcb_elem);
+      if (tid == cur_pcb->pid)
+        return cur_pcb;
+    }
+  return NULL;
+}
 void sys_exit (int status)
 {
   struct thread *curr = thread_current ();
-  printf ("%s: exit(%d)\n", thread_current ()->name, status);
-  curr->process_control->exit_code = status;
-  sema_up (&curr->process_control->parent_waiting_sema);
+  printf ("%s: exit(%d)\n", curr->name, status);
+  struct pcb *process_control = find_pcb_by_tid (curr->tid);
+  process_control->exit_code = status;
+  sema_up (&process_control->parent_waiting_sema);
   close_all_files (&curr->files_owned);
   clean_children (&curr->child_list);
-  if (curr->process_control->orphan)
-    free(curr->process_control);
-  else
-    curr->process_control->dead = 1;
   thread_exit ();
 }
 
@@ -446,7 +459,7 @@ get_user (const uint8_t *uaddr)
  * Returns true if successful, false if a segfault occurred. */
 bool put_user (uint8_t *udst, uint8_t byte)
 {
-  if (((void *) udst) > PHYS_BASE)
+  if (((void *) udst) >= PHYS_BASE)
     return 0;
   int error_code;
   asm ("movl $1f, %0; movb %b2, %1; 1:": "=&a" (error_code), "=m" (*udst) : "q" (byte));

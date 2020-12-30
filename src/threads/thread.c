@@ -90,7 +90,7 @@ thread_init (void)
   lock_init (&tid_lock);
   list_init (&ready_list);
   list_init (&all_list);
-
+  list_init (&pcb_list);
   /* Set up a thread structure for the running thread. */
   initial_thread = running_thread ();
   init_thread (initial_thread, "main", PRI_DEFAULT);
@@ -169,27 +169,41 @@ thread_create (const char *name, int priority,
   struct switch_entry_frame *ef;
   struct switch_threads_frame *sf;
   tid_t tid;
-
+  if (DEBUG_MODE)
+    printf ("thread_create: first quarter\n");
   ASSERT (function != NULL);
 
   /* Allocate thread. */
   t = palloc_get_page (PAL_ZERO);
   if (t == NULL)
     return TID_ERROR;
-
+  if (DEBUG_MODE)
+    printf ("thread_create: second quarter\n");
   /* Initialize thread. */
   init_thread (t, name, priority);
+  if (DEBUG_MODE)
+    printf ("thread_create: third quarter\n");
   tid = t->tid = allocate_tid ();
-
+  if (DEBUG_MODE)
+    printf ("thread_create: fourth quarter\n");
   //initialize process pcb and add it to parent
-  t->process_control = malloc (sizeof (struct pcb));
-  t->process_control->dead = 0;
-  t->process_control->orphan = 0;
-  sema_init (&t->process_control->parent_waiting_sema, 0);
-  if (t->parent != NULL)
-    list_push_front (&t->parent->child_list, &t->process_control->child_elem);
-  t->process_control->pid = t->tid;
+  struct pcb *process_control = malloc (sizeof (struct pcb));
+  if (DEBUG_MODE)
+    printf ("thread_create: fifth quarter\n");
+  if (process_control == NULL)
+    {
+      palloc_free_page (t);
+      return TID_ERROR;
+    }
 
+  process_control->used = 0;
+  if (DEBUG_MODE)
+    printf ("thread_create: sixth quarter\n");
+  sema_init (&process_control->parent_waiting_sema, 0);
+  if (t->parent != NULL)
+    list_push_front (&t->parent->child_list, &process_control->child_elem);
+  process_control->pid = t->tid;
+  list_push_back (&pcb_list, &process_control->all_pcb_elem);
 
 
   /* Stack frame for kernel_thread(). */

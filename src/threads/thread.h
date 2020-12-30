@@ -22,6 +22,7 @@ typedef int tid_t;
    when they are first scheduled and removed when they exit. */
 struct list all_list;
 
+struct list pcb_list;
 #define TID_ERROR ((tid_t) -1)          /* Error value for tid_t. */
 
 /* Thread priorities. */
@@ -106,7 +107,6 @@ struct thread
     //added for userprog
     struct thread* parent;
     struct semaphore child_sema;
-    struct pcb* process_control;
     struct list child_list;     /*list of pcb*/
 
     /* Owned by thread.c. */

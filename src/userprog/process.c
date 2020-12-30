@@ -21,7 +21,10 @@
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
-
+struct waiting_struct {
+    struct semaphore *tmp_sema;
+    char *fn_copy;
+};
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
    before process_execute() returns.  Returns the new process's
@@ -30,15 +33,17 @@ tid_t
 process_execute (const char *argv)
 {
   unsigned int len = strlen (argv) + 1;
-  char *copy_str = (char *) malloc (len);
-  ASSERT(copy_str != NULL);
+  char *copy_str = palloc_get_page (0);
+  if (copy_str == NULL)
+    return -1;
   strlcpy (copy_str, argv, len);
   char *save_ptr;
   char *file_name = strtok_r (copy_str, " ", &save_ptr);
   ASSERT(file_name != NULL);
   char *fn_copy;
   tid_t tid;
-
+  //if (DEBUG_MODE)
+  printf ("process_execute: in the first quarter\n");
   /* Make a copy of FILE_NAME.
      Otherwise there's a race between the caller and load(). */
   fn_copy = palloc_get_page (0);
@@ -50,23 +55,49 @@ process_execute (const char *argv)
   strlcpy (fn_copy, argv, PGSIZE);
 
   /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
-  free (copy_str);
+  // if (DEBUG_MODE)
+  printf ("process_execute: in the second quarter\n");
+  struct semaphore tmp_sema;
+  sema_init (&tmp_sema, 0);
+  struct waiting_struct *tmp_struct = palloc_get_page (0);
+  if (tmp_struct == NULL)
+    {
+      palloc_free_page (fn_copy);
+      return -1;
+    }
+  tmp_struct->tmp_sema = &tmp_sema;
+  tmp_struct->fn_copy = fn_copy;
+  tid = thread_create (file_name, PRI_DEFAULT, start_process, tmp_struct);
+  sema_down (&tmp_sema);
+  palloc_free_page (tmp_struct);
+  //if (DEBUG_MODE)
+  printf ("process_execute: created thread\n");
+  palloc_free_page (copy_str);
   if (tid == TID_ERROR)
-    palloc_free_page (fn_copy);
-
-  //wait for child initialization
-  sema_down (&thread_current ()->child_sema);
-
+    {
+      palloc_free_page (fn_copy);
+      return tid;
+    }
+  if (DEBUG_MODE)
+    printf ("%s = %d\n", argv, tid);
+  if (DEBUG_MODE)
+    printf ("old tid = %d\n", tid);
+  if (find_pcb_by_tid (tid) == NULL)
+    {
+      tid = TID_ERROR;
+    }
+  if (DEBUG_MODE)
+    printf ("new tid = %d\n", tid);
   return tid;
 }
 
 /* A thread function that loads a user process and starts it
    running. */
 static void
-start_process (void *file_name_)
+start_process (void *arg)
 {
-  char *file_name = file_name_;
+  struct waiting_struct *tmp_waiting = (struct waiting_struct *) arg;
+  char *file_name = tmp_waiting->fn_copy;
   struct intr_frame if_;
   bool success;
 
@@ -79,13 +110,19 @@ start_process (void *file_name_)
 
   /* If load failed, quit. */
   palloc_free_page (file_name);
+  enum intr_level old_level = intr_disable ();
+  struct thread *t = thread_current ();
+  intr_set_level (old_level);
   if (!success)
     {
-      sema_up (&thread_current ()->parent->child_sema);
-      thread_exit ();
+      struct pcb *cur_pcb = find_pcb_by_tid (t->tid);
+      cur_pcb->pid = -1;
+      t->tid = -1;
+      sema_up (tmp_waiting->tmp_sema);
+      sys_exit (-1);
     }
   else
-    sema_up (&thread_current ()->parent->child_sema);
+    sema_up (tmp_waiting->tmp_sema);
 
 
   /* Start the user process by simulating a return from an
@@ -108,12 +145,15 @@ start_process (void *file_name_)
    This function will be implemented in problem 2-2.  For now, it
    does nothing. */
 int
-process_wait (tid_t child_tid UNUSED)
+process_wait (tid_t child_tid)
 {
+  int current_tid = thread_current ()->tid;
+  //printf("1 - current tid = %d, wait for %d\n", current_tid, child_tid);
   if (list_empty (&thread_current ()->child_list))
     {
       return -1;
     }
+  //printf("2 - current tid = %d, wait for %d\n", current_tid, child_tid);
   struct thread *curr = thread_current ();
   struct pcb *child = NULL;
   struct list_elem *e;
@@ -127,17 +167,18 @@ process_wait (tid_t child_tid UNUSED)
       if (cp->pid == child_tid)
         child = cp;
     }
+  //printf("3 - current tid = %d, wait for %d\n", current_tid, child_tid);
   if (child == NULL)
     return -1;
-
-  if (child->dead == 0)
+  //printf("4 - current tid = %d, wait for %d\n", current_tid, child_tid);
+  if (child->used == 0)
     {
       sema_down (&child->parent_waiting_sema);
+      child->used = 1;
+      return child->exit_code;
     }
-  int exitcode = child->exit_code;
-  list_remove (&child->child_elem);
-  free (child);
-  return exitcode;
+  else
+    return -1;
 
   /*static int c = 0;
     while (c++ <= 500)
@@ -270,10 +311,12 @@ load (const char *file_name_, void (**eip) (void), void **esp)
   if (t->pagedir == NULL)
     goto done;
   process_activate ();
+  ASSERT(file_name_ != NULL)
   unsigned int len = strlen (file_name_) + 1;
 
-  char *copy_str = (char *) malloc (len);
-  ASSERT(copy_str != NULL);
+  char *copy_str = palloc_get_page (0);
+  if (copy_str == NULL)
+    return false;
   strlcpy (copy_str, file_name_, len);
   char *save_ptr;
   char *file_name = strtok_r (copy_str, " ", &save_ptr);
@@ -286,7 +329,7 @@ load (const char *file_name_, void (**eip) (void), void **esp)
       printf ("load: %s: open failed\n", file_name);
       goto done;
     }
-  free (copy_str);
+
   /* Read and verify executable header. */
   if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
       || memcmp (ehdr.e_ident, "\177ELF\1\1\1", 7)
@@ -358,7 +401,6 @@ load (const char *file_name_, void (**eip) (void), void **esp)
           break;
         }
     }
-
   /* Set up stack. */
   if (!setup_stack (esp, file_name_))
     goto done;
@@ -367,10 +409,12 @@ load (const char *file_name_, void (**eip) (void), void **esp)
   *eip = (void (*) (void)) ehdr.e_entry;
 
   success = true;
-
   done:
   /* We arrive here whether the load is successful or not. */
+  //if (DEBUG_MODE)
+  //printf ("Success =%d\n", success);
   file_close (file);
+  palloc_free_page (copy_str);
   return success;
 }
 
@@ -486,7 +530,8 @@ int count_arguments (const char *argv)
 {
   unsigned int len = strlen (argv) + 1;
   char *copy_str = (char *) malloc (len);
-  ASSERT(copy_str != NULL);
+  if (copy_str == NULL)
+    return -1;
   strlcpy (copy_str, argv, len);
   char *token, *save_ptr;
   int sz = 0;
@@ -501,15 +546,22 @@ int count_arguments (const char *argv)
   free (copy_str);
   return sz;
 }
-void parse_arguments (const char *argv, char ***argument_list, int *sz)
+bool parse_arguments (const char *argv, char ***argument_list, int *sz)
 {
   (*sz) = count_arguments (argv);
+  if (*sz == -1)
+    return false;
   (*argument_list) = (char **) malloc (sizeof (char **) * (*sz));
-  ASSERT((*argument_list) != NULL);
+  if (argument_list == NULL)
+    return false;
   int counter = 0;
   unsigned int len = strlen (argv) + 1;
   char *copy_str = (char *) malloc (len);
-  ASSERT(copy_str != NULL);
+  if (copy_str == NULL)
+    {
+      free (*argument_list);
+      return false;
+    }
   strlcpy (copy_str, argv, len);
   char *token, *save_ptr;
   for (token = strtok_r (copy_str, " ", &save_ptr); token != NULL;
@@ -518,20 +570,21 @@ void parse_arguments (const char *argv, char ***argument_list, int *sz)
       (*argument_list)[counter] = token;
       counter++;
     }
-
+  return true;
 }
 /* Handles the writing of the program argument into the stack */
-void write_arguments_to_stack (void **esp, const char *argv)
+bool write_arguments_to_stack (void **esp, const char *argv)
 {
   char **argument_list;
   int sz;
-  parse_arguments (argv, &argument_list, &sz);
+
+  if (!parse_arguments (argv, &argument_list, &sz))
+    return false;
   uintptr_t stk_address[sz];
-  ASSERT(sz > 0);
-  ASSERT(stk_address != NULL);
   int temp_sz = sz;
   for (sz--; sz >= 0; sz--)
     {
+      //printf ("Writing %s starting at %x\n", argument_list[sz], *(esp));
       unsigned int len = strlen (argument_list[sz]) + 1;
       (*esp) -= len;
       stk_address[sz] = (uintptr_t) &(*(*esp));
@@ -564,6 +617,7 @@ void write_arguments_to_stack (void **esp, const char *argv)
         }
       hex_dump (&**esp, data_saved, counter, true);
     }
+  return true;
 }
 /* Create a minimal stack by mapping a zeroed page at the top of
    user virtual memory. */
@@ -572,18 +626,22 @@ setup_stack (void **esp, const char *argv)
 {
   uint8_t *kpage;
   bool success = false;
-
+  if (DEBUG_STACK)
+    printf ("Inside stack\n");
   kpage = palloc_get_page (PAL_USER | PAL_ZERO);
   if (kpage != NULL)
     {
       success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
       if (success)
-        *esp = PHYS_BASE;
+        {
+          *esp = PHYS_BASE;
+          return write_arguments_to_stack (esp, argv);
+        }
       else
+
         palloc_free_page (kpage);
+      return false;
     }
-  write_arguments_to_stack (esp, argv);
-  return success;
 }
 
 /* Adds a mapping from user virtual address UPAGE to kernel
