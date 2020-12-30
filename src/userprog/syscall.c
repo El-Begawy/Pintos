@@ -259,17 +259,9 @@ static int open_file (void *esp)
   ASSERT(file_desc != NULL);
   file_desc->file = tmp_file;
   add_file_desc_to_list (file_desc);
-  struct list_elem *e;
-  for (e = list_begin (&all_list); e != list_end (&all_list); e = list_next (e))
-    {
-      struct thread *t = list_entry(e, struct thread, allelem);
-      // Are equal
-      if (strcmp (t->name, buffer) == 0)
-        {
-          file_deny_write (tmp_file);
-          break;
-        }
-    }
+  if (strcmp (thread_current ()->name, buffer) == 0)
+      file_deny_write (tmp_file);
+
   lock_release (&file_lock);
   return file_desc->fd;
 }
