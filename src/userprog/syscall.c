@@ -259,9 +259,6 @@ static int open_file (void *esp)
   ASSERT(file_desc != NULL);
   file_desc->file = tmp_file;
   add_file_desc_to_list (file_desc);
-  if (strcmp (thread_current ()->name, buffer) == 0)
-      file_deny_write (tmp_file);
-
   lock_release (&file_lock);
   return file_desc->fd;
 }
@@ -401,6 +398,7 @@ uint32_t write_call (void *esp)
 }
 static void close_all_files (struct list *files)
 {
+  lock_acquire (&file_lock);
   while (!list_empty (files))
     {
       struct list_elem *e = list_pop_back (files);
@@ -408,6 +406,9 @@ static void close_all_files (struct list *files)
       file_close (fd->file);
       free (fd);
     }
+  if (thread_current ()->exec_file != NULL)
+    file_close (thread_current ()->exec_file);
+  lock_release (&file_lock);
 }
 
 static void clean_children (struct list *children)

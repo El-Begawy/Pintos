@@ -501,7 +501,11 @@ load (const char *file_name_, void (**eip) (void), void **esp)
   /* We arrive here whether the load is successful or not. */
   //if (DEBUG_MODE)
   //printf ("Success =%d\n", success);
-  file_close (file);
+  if (success && file != NULL)
+    {
+      thread_current ()->exec_file = file;
+      file_deny_write (file);
+    }
   free (copy_str);
   return success;
 }

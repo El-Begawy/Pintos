@@ -108,6 +108,7 @@ struct thread
     struct semaphore child_sema;
     struct list child_list;     /*list of pcb*/
     struct pcb *process_control;
+    struct file* exec_file;
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
   };
