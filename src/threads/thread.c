@@ -13,7 +13,7 @@
 #include "threads/synch.h"
 #include "threads/vaddr.h"
 #include "threads/malloc.h"
-
+#include <devices/timer.h>
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
@@ -27,6 +27,9 @@
    that are ready to run but not actually running. */
 static struct list ready_list;
 
+/* List of process in THREAD_SLEEP state */
+
+static struct list sleeping_list;
 /* Idle thread. */
 static struct thread *idle_thread;
 
@@ -90,6 +93,7 @@ thread_init (void)
   lock_init (&tid_lock);
   list_init (&ready_list);
   list_init (&all_list);
+  list_init (&sleeping_list);
   /* Set up a thread structure for the running thread. */
   initial_thread = running_thread ();
   init_thread (initial_thread, "main", PRI_DEFAULT);
@@ -244,6 +248,40 @@ thread_unblock (struct thread *t)
   list_push_back (&ready_list, &t->elem);
   t->status = THREAD_READY;
   intr_set_level (old_level);
+}
+
+/* Comparator used to sort threads according to increasing time */
+bool thread_time_comparator (const struct list_elem *a, const struct list_elem *b, void *aux UNUSED)
+{
+    const struct thread *ta = (list_entry(a, struct thread, sleepelem));
+    const struct thread *tb = (list_entry(b, struct thread, sleepelem));
+    return ta->time_to_wake < tb->time_to_wake;
+}
+
+/* Makes the thread sleep until ticks */
+void
+thread_sleep (int64_t ticks)
+{
+    struct thread *t = thread_current ();
+    ASSERT(is_thread (t));
+    ASSERT (!intr_context ());
+    enum intr_level old_level = intr_disable ();
+    t->status = THREAD_SLEEP;
+    t->time_to_wake = ticks;
+    list_insert_ordered (&sleeping_list, &t->sleepelem, &thread_time_comparator, NULL);
+    schedule ();
+    intr_set_level (old_level);
+}
+
+void
+thread_unsleep (struct thread *t)
+{
+    ASSERT(is_thread (t));
+    ASSERT (t->status == THREAD_SLEEP);
+    enum intr_level old_level = intr_disable ();
+    t->status = THREAD_READY;
+    list_push_back (&ready_list, &t->elem);
+    intr_set_level (old_level);
 }
 
 /* Returns the name of the running thread. */
@@ -470,7 +508,6 @@ init_thread (struct thread *t, const char *name, int priority)
 
 
   //userprog
-  sema_init (&t->child_sema, 0);
   t->parent = running_thread ();
   list_init (&t->child_list);
   list_init (&t->files_owned);
@@ -563,13 +600,27 @@ thread_schedule_tail (struct thread *prev)
 static void
 schedule (void)
 {
-  struct thread *cur = running_thread ();
-  struct thread *next = next_thread_to_run ();
-  struct thread *prev = NULL;
 
-  ASSERT (intr_get_level () == INTR_OFF);
-  ASSERT (cur->status != THREAD_RUNNING);
-  ASSERT (is_thread (next));
+
+
+    int64_t time_now = timer_ticks ();
+    while (!list_empty (&sleeping_list))
+    {
+        struct thread *t = list_entry(list_front (&sleeping_list), struct thread, sleepelem);
+        if (time_now >= t->time_to_wake)
+        {
+            thread_unsleep (t);
+            list_pop_front (&sleeping_list);
+        }
+        else break;
+    }
+    struct thread *cur = running_thread ();
+    struct thread *next = next_thread_to_run ();
+    struct thread *prev = NULL;
+
+    ASSERT (intr_get_level () == INTR_OFF);
+    ASSERT (cur->status != THREAD_RUNNING);
+    ASSERT (is_thread (next));
 
   if (cur != next)
     prev = switch_threads (cur, next);
