@@ -31,12 +31,14 @@ static int sys_execute (void *esp);
 static int sys_wait (tid_t pid);
 
 struct lock file_lock;
+struct lock pcb_lock;
 
 void
 syscall_init (void)
 {
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
   lock_init (&file_lock);
+  lock_init (&pcb_lock);
 }
 
 static void
@@ -418,9 +420,11 @@ static void clean_children (struct list *children)
     {
       struct list_elem *e = list_pop_back (children);
       struct pcb *process_control = list_entry(e, struct pcb, child_elem);
+      lock_acquire(&pcb_lock);
       process_control->orphan = 1;
       if (process_control->dead)
         free (process_control);
+      lock_release(&pcb_lock);
     }
 }
 void sys_exit (int status)
@@ -431,12 +435,14 @@ void sys_exit (int status)
   close_all_files (&curr->files_owned);
   clean_children (&curr->child_list);
   process_control->exit_code = status;
+  lock_acquire (&pcb_lock);
   process_control->dead = 1;
   sema_up (&process_control->parent_waiting_sema);
   if (process_control->orphan == 1)
     {
       free (process_control);
     }
+  lock_release (&pcb_lock);
   thread_exit ();
 }
 
