@@ -177,6 +177,7 @@ process_wait (tid_t child_tid)
   sema_down (&child->parent_waiting_sema);
   int result = child->exit_code;
   list_remove (&child->child_elem);
+  lock_acquire(&)
   free (child);
   return result;
   /*static int c = 0;

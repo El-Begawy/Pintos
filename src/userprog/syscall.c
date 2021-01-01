@@ -420,11 +420,11 @@ static void clean_children (struct list *children)
     {
       struct list_elem *e = list_pop_back (children);
       struct pcb *process_control = list_entry(e, struct pcb, child_elem);
-      lock_acquire(&pcb_lock);
+      lock_acquire (&pcb_lock);
       process_control->orphan = 1;
       if (process_control->dead)
         free (process_control);
-      lock_release(&pcb_lock);
+      lock_release (&pcb_lock);
     }
 }
 void sys_exit (int status)
@@ -437,11 +437,12 @@ void sys_exit (int status)
   process_control->exit_code = status;
   lock_acquire (&pcb_lock);
   process_control->dead = 1;
-  sema_up (&process_control->parent_waiting_sema);
   if (process_control->orphan == 1)
     {
       free (process_control);
     }
+  else
+    sema_up (&process_control->parent_waiting_sema);
   lock_release (&pcb_lock);
   thread_exit ();
 }
