@@ -418,9 +418,7 @@ static void clean_children (struct list *children)
     {
       struct list_elem *e = list_pop_back (children);
       struct pcb *process_control = list_entry(e, struct pcb, child_elem);
-      process_control->orphan = 1;
-      if (process_control->dead)
-        free (process_control);
+      free (process_control);
     }
 }
 void sys_exit (int status)
@@ -428,15 +426,10 @@ void sys_exit (int status)
   struct thread *curr = thread_current ();
   printf ("%s: exit(%d)\n", curr->name, status);
   struct pcb *process_control = curr->process_control;
+  process_control->exit_code = status;
+  sema_up (&process_control->parent_waiting_sema);
   close_all_files (&curr->files_owned);
   clean_children (&curr->child_list);
-  process_control->exit_code = status;
-  process_control->dead = 1;
-  sema_up (&process_control->parent_waiting_sema);
-  if (process_control->orphan == 1)
-    {
-      free (process_control);
-    }
   thread_exit ();
 }
 

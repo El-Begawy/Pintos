@@ -105,7 +105,7 @@ kill (struct intr_frame *f)
          kernel. */
       printf ("Interrupt %#04x (%s) in unknown segment %04x\n",
              f->vec_no, intr_name (f->vec_no), f->cs);
-      sys_exit(-1);
+      thread_exit ();
     }
 }
 
