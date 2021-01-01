@@ -57,12 +57,14 @@ process_execute (const char *argv)
     }
   strlcpy (cur_pcb->fn_copy, argv, PGSIZE);
   cur_pcb->used = 0;
+  cur_pcb->dead = 0;
+  cur_pcb->orphan = 0;
   sema_init (&cur_pcb->child_sema, 0);
   sema_init (&cur_pcb->parent_waiting_sema, 0);
   if (thread_current ()->process_control != NULL)
     cur_pcb->depth = thread_current ()->process_control->depth + 1;
   else cur_pcb->depth = 0;
-  list_push_front (&thread_current ()->child_list, &cur_pcb->child_elem);
+
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (file_name, PRI_DEFAULT, start_process, cur_pcb);
   cur_pcb->pid = tid;
@@ -84,6 +86,13 @@ process_execute (const char *argv)
     printf ("old tid = %d\n", tid);
   if (DEBUG_MODE)
     printf ("new tid = %d\n", tid);
+  if (cur_pcb->pid >= 0)
+    list_push_front (&thread_current ()->child_list, &cur_pcb->child_elem);
+  else
+    {
+      free (cur_pcb);
+      return -1;
+    }
   return cur_pcb->pid;
 }
 
@@ -113,7 +122,7 @@ start_process (void *argv)
         printf ("Thread reached here\n");
       thread_current ()->process_control->pid = -1;
       sema_up (&thread_current ()->process_control->child_sema);
-      sys_exit (-1);
+      thread_exit ();
     }
   else
     sema_up (&thread_current ()->process_control->child_sema);
@@ -147,7 +156,7 @@ process_wait (tid_t child_tid)
     {
       return -1;
     }
-  //printf("2 - current tid = %d, wait for %d\n", current_tid, child_tid);
+  // printf ("2 - current tid = %d, wait for %d\n", current_tid, child_tid);
   struct thread *curr = thread_current ();
   struct pcb *child = NULL;
   struct list_elem *e;
@@ -165,15 +174,11 @@ process_wait (tid_t child_tid)
   if (child == NULL)
     return -1;
   //printf("4 - current tid = %d, wait for %d\n", current_tid, child_tid);
-  if (child->used == 0)
-    {
-      sema_down (&child->parent_waiting_sema);
-      child->used = 1;
-      return child->exit_code;
-    }
-  else
-    return -1;
-
+  sema_down (&child->parent_waiting_sema);
+  int result = child->exit_code;
+  list_remove (&child->child_elem);
+  free (child);
+  return result;
   /*static int c = 0;
     while (c++ <= 500)
     thread_yield ();*/

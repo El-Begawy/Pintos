@@ -14,6 +14,8 @@ struct pcb {
     struct list_elem child_elem;
     struct list_elem all_pcb_elem;
     bool used;
+    bool orphan;
+    bool dead;
     int exit_code;
     struct semaphore parent_waiting_sema;
     struct semaphore child_sema;
