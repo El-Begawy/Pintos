@@ -12,7 +12,6 @@ void process_activate (void);
 struct pcb {
     tid_t pid;
     struct list_elem child_elem;
-    struct list_elem all_pcb_elem;
     bool used;
     bool orphan;
     bool dead;
@@ -20,6 +19,5 @@ struct pcb {
     struct semaphore parent_waiting_sema;
     struct semaphore child_sema;
     char *fn_copy;
-    int depth;
 };
 #endif /* userprog/process.h */

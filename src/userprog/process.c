@@ -61,9 +61,6 @@ process_execute (const char *argv)
   cur_pcb->orphan = 0;
   sema_init (&cur_pcb->child_sema, 0);
   sema_init (&cur_pcb->parent_waiting_sema, 0);
-  if (thread_current ()->process_control != NULL)
-    cur_pcb->depth = thread_current ()->process_control->depth + 1;
-  else cur_pcb->depth = 0;
 
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (file_name, PRI_DEFAULT, start_process, cur_pcb);
